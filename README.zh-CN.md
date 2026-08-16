@@ -8,16 +8,22 @@
 
 ## 界面预览
 
+### Gallery 总览
+
+<p align="center">
+  <img src="docs/images/gallery-overview.jpg" alt="Image Caption Gallery 可调节图片数据集 Gallery 总览" width="100%">
+</p>
+
 ### 图片与中文 Markdown Caption
 
 <p align="center">
-  <img src="docs/images/gallery-detail-zh.png" alt="Image Caption Gallery 中文 Markdown Caption 预览" width="100%">
+  <img src="docs/images/gallery-detail-zh.jpg" alt="Image Caption Gallery 中文 Markdown Caption 预览" width="100%">
 </p>
 
 ### 图片与英文 Markdown Caption
 
 <p align="center">
-  <img src="docs/images/gallery-detail-en.png" alt="Image Caption Gallery 英文 Markdown Caption 预览" width="100%">
+  <img src="docs/images/gallery-detail-en.jpg" alt="Image Caption Gallery 英文 Markdown Caption 预览" width="100%">
 </p>
 
 ## 主要功能
@@ -30,6 +36,10 @@
 - 读取与图片同名的 `.txt` Caption，不修改数据集中的任何文件。
 - 默认使用 Markdown 渲染，也可切换为 Raw 原始文本或格式化 JSON。
 - 拖动中间分隔线，自由调整 Image 与 Text 两栏宽度。
+- 图片默认按当前可用宽度或高度完整显示，调整窗口或分隔线后会自动重新计算。
+- 使用触控板捏合或 `Ctrl/Command + 滚轮` 将图片缩放到 25%–400%。
+- 放大后可用鼠标拖动或双指滑动查看细节，双击图片恢复默认完整视图。
+- 在顶栏以“宽 × 高”显示原图分辨率，两个数字右对齐并各自预留四位宽度。
 - 将 Caption 字体缩放到 70%–180%。
 - 使用 `←` / `→` 键或图片两侧的半透明按钮切换图片。
 - 使用 `Escape` 返回 Gallery，并保留搜索条件和缩略图状态。
@@ -60,6 +70,9 @@ code --install-extension xingfu-yi.image-caption-gallery --force
 | --- | --- | --- |
 | 打开 Image Caption Gallery | `Command+Option+G`（`⌘⌥G`） | `Ctrl+Alt+G` |
 | 上一张 / 下一张图片 | `←` / `→` | `←` / `→` |
+| 缩放图片 | 触控板捏合或 `Command + 滚轮` | 触控板捏合或 `Ctrl + 滚轮` |
+| 平移放大后的图片 | 拖动或双指滑动 | 拖动或双指滑动 |
+| 恢复图片视图 | 双击图片 | 双击图片 |
 | 返回 Gallery | `Escape` | `Escape` |
 
 ## 数据集目录格式

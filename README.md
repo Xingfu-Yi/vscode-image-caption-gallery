@@ -8,16 +8,22 @@ Open a folder as an adjustable thumbnail gallery, select an image, and review it
 
 ## Preview
 
+### Gallery overview
+
+<p align="center">
+  <img src="docs/images/gallery-overview.jpg" alt="Image Caption Gallery showing an adjustable image dataset gallery" width="100%">
+</p>
+
 ### Image and Markdown caption
 
 <p align="center">
-  <img src="docs/images/gallery-detail-en.png" alt="Image Caption Gallery showing an image beside an English Markdown caption" width="100%">
+  <img src="docs/images/gallery-detail-en.jpg" alt="Image Caption Gallery showing an image beside an English Markdown caption" width="100%">
 </p>
 
 ### Multilingual captions
 
 <p align="center">
-  <img src="docs/images/gallery-detail-zh.png" alt="Image Caption Gallery showing an image beside a Chinese Markdown caption" width="100%">
+  <img src="docs/images/gallery-detail-zh.jpg" alt="Image Caption Gallery showing an image beside a Chinese Markdown caption" width="100%">
 </p>
 
 ## Features
@@ -30,6 +36,10 @@ Open a folder as an adjustable thumbnail gallery, select an image, and review it
 - Read same-name `.txt` sidecar captions without modifying dataset files.
 - Render captions as Markdown by default, with Raw text and formatted JSON modes.
 - Drag the center divider to resize the Image and Text panes.
+- Keep every image fully visible without cropping, even after resizing the window or divider.
+- Zoom from 25% to 400% with a trackpad pinch or `Ctrl/Command + wheel`.
+- Pan an enlarged image by dragging or two-finger scrolling, and double-click to restore the original fitted view.
+- Show the original `width × height` resolution as right-aligned values in stable four-character fields.
 - Scale caption text from 70% to 180%.
 - Switch images with `Left` / `Right` or the translucent image-edge controls.
 - Return to the gallery with `Escape` while preserving search and thumbnail state.
@@ -60,6 +70,9 @@ When using Remote SSH, install the extension in the remote extension host. If yo
 | --- | --- | --- |
 | Open Image Caption Gallery | `Command+Option+G` (`⌘⌥G`) | `Ctrl+Alt+G` |
 | Previous / next image | `Left` / `Right` | `Left` / `Right` |
+| Zoom image | Trackpad pinch or `Command + wheel` | Touchpad pinch or `Ctrl + wheel` |
+| Pan enlarged image | Drag or two-finger scroll | Drag or two-finger scroll |
+| Reset image view | Double-click image | Double-click image |
 | Return to gallery | `Escape` | `Escape` |
 
 ## Dataset layout

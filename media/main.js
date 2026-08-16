@@ -8,9 +8,11 @@
   const sizeInput = document.querySelector('#thumbnail-size');
   const sizeValue = document.querySelector('#thumbnail-size-value');
   const count = document.querySelector('#count');
+  const imageStage = document.querySelector('#image-stage');
   const detailImage = document.querySelector('#detail-image');
   const detailPath = document.querySelector('#detail-path');
-  const position = document.querySelector('#position');
+  const imageWidth = document.querySelector('#image-width');
+  const imageHeight = document.querySelector('#image-height');
   const captionPreview = document.querySelector('#caption-preview');
   const captionMode = document.querySelector('#caption-mode');
   const splitter = document.querySelector('#splitter');
@@ -26,7 +28,15 @@
   let captionText = '';
   let renderedCaption = '';
   let splitRatio = clamp(Number(persisted.splitRatio) || 0.64, 0.3, 0.8);
+  let imageZoomPercent = 100;
+  let imagePanX = 0;
+  let imagePanY = 0;
+  let imagePanGesture = null;
+  let imageResizeObserver = null;
   let textZoomPercent = clamp(Number(persisted.textZoomPercent) || 100, 70, 180);
+  const thumbnailObserver = 'IntersectionObserver' in window
+    ? new IntersectionObserver(loadVisibleThumbnails, { rootMargin: '600px 0px' })
+    : null;
 
   sizeInput.value = String(persisted.thumbnailSize || defaultSize);
   search.value = persisted.search || '';
@@ -49,6 +59,19 @@
   document.querySelector('.image-pane').addEventListener('click', () => {
     detailView.focus({ preventScroll: true });
   });
+  detailImage.addEventListener('load', () => {
+    imagePanX = 0;
+    imagePanY = 0;
+    detailImage.classList.remove('loading');
+    updateImageDimensions();
+    updateImageTransform();
+  });
+  imageStage.addEventListener('pointerdown', startImagePan);
+  imageStage.addEventListener('pointermove', moveImagePan);
+  imageStage.addEventListener('pointerup', finishImagePan);
+  imageStage.addEventListener('pointercancel', finishImagePan);
+  imageStage.addEventListener('dblclick', fitImageToPane);
+  imageStage.addEventListener('wheel', handleImageWheel, { passive: false });
   captionMode.addEventListener('change', () => {
     renderCaptionView();
     persistState();
@@ -66,7 +89,12 @@
     event.stopPropagation();
     applySplitRatio(splitRatio + (event.key === 'ArrowLeft' ? -0.02 : 0.02));
   });
-  window.addEventListener('resize', () => applySplitRatio(splitRatio, false));
+  window.addEventListener('resize', () => {
+    applySplitRatio(splitRatio, false);
+    if (!detailView.classList.contains('hidden')) {
+      requestAnimationFrame(updateImageTransform);
+    }
+  });
 
   window.addEventListener('keydown', (event) => {
     if (detailView.classList.contains('hidden')) {
@@ -101,14 +129,29 @@
     }
 
     if (message.type === 'images') {
+      const activeImageId = detailView.classList.contains('hidden') ? '' : currentCaptionRequest;
       images = message.images;
       if (message.initialImageId) {
         search.value = '';
       }
       renderGallery();
-      if (message.initialImageId) {
+      const activeIndex = activeImageId
+        ? filteredImages.findIndex((image) => image.id === activeImageId)
+        : -1;
+      if (activeIndex >= 0) {
+        currentIndex = activeIndex;
+        updateDetailMetadata();
+      } else if (message.initialImageId) {
         openDetail(message.initialImageId);
       }
+      return;
+    }
+
+    if (message.type === 'initialImage') {
+      images = [message.image];
+      search.value = '';
+      renderGallery();
+      openDetail(message.image.id);
       return;
     }
 
@@ -135,6 +178,7 @@
   function renderGallery() {
     const query = search.value.trim().toLocaleLowerCase();
     filteredImages = images.filter((image) => image.relativePath.toLocaleLowerCase().includes(query));
+    thumbnailObserver?.disconnect();
     gallery.replaceChildren();
 
     const fragment = document.createDocumentFragment();
@@ -146,9 +190,14 @@
       card.addEventListener('click', () => openDetail(image.id));
 
       const thumbnail = document.createElement('img');
-      thumbnail.src = image.source;
       thumbnail.alt = image.name;
       thumbnail.loading = 'lazy';
+      if (thumbnailObserver) {
+        thumbnail.dataset.source = image.source;
+        thumbnailObserver.observe(thumbnail);
+      } else {
+        thumbnail.src = image.source;
+      }
 
       const filename = document.createElement('span');
       filename.className = 'filename';
@@ -172,6 +221,10 @@
     }
     galleryView.classList.add('hidden');
     detailView.classList.remove('hidden');
+    if (!imageResizeObserver) {
+      imageResizeObserver = new ResizeObserver(updateImageTransform);
+    }
+    imageResizeObserver.observe(imageStage);
     applySplitRatio(splitRatio, false);
     loadCurrentImage();
     detailView.focus({ preventScroll: true });
@@ -186,15 +239,22 @@
     currentCaptionRequest = image.id;
     captionText = '';
     renderedCaption = '';
+    imageZoomPercent = 100;
+    imagePanX = 0;
+    imagePanY = 0;
+    imageWidth.textContent = '—';
+    imageHeight.textContent = '—';
+    detailImage.classList.add('loading');
     detailImage.src = image.source;
     detailImage.alt = image.name;
-    detailPath.textContent = image.relativePath;
-    detailPath.title = image.relativePath;
-    position.textContent = `${currentIndex + 1} / ${filteredImages.length}`;
     captionPreview.textContent = 'Loading caption…';
-    document.querySelector('#previous').disabled = currentIndex === 0;
-    document.querySelector('#next').disabled = currentIndex === filteredImages.length - 1;
+    updateDetailMetadata();
     vscode.postMessage({ type: 'loadCaption', id: image.id });
+    if (detailImage.complete && detailImage.naturalWidth > 0) {
+      detailImage.classList.remove('loading');
+      updateImageDimensions();
+      requestAnimationFrame(updateImageTransform);
+    }
   }
 
   function move(offset) {
@@ -207,8 +267,35 @@
   }
 
   function showGallery() {
+    imageResizeObserver?.disconnect();
     detailView.classList.add('hidden');
     galleryView.classList.remove('hidden');
+  }
+
+  function updateDetailMetadata() {
+    const image = filteredImages[currentIndex];
+    if (!image) {
+      return;
+    }
+    detailPath.textContent = image.relativePath;
+    detailPath.title = image.relativePath;
+    document.querySelector('#previous').disabled = currentIndex === 0;
+    document.querySelector('#next').disabled = currentIndex === filteredImages.length - 1;
+  }
+
+  function loadVisibleThumbnails(entries, observer) {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) {
+        continue;
+      }
+      const thumbnail = entry.target;
+      const source = thumbnail.dataset.source;
+      if (source) {
+        thumbnail.src = source;
+        delete thumbnail.dataset.source;
+      }
+      observer.unobserve(thumbnail);
+    }
   }
 
   function startSplitResize(event) {
@@ -252,6 +339,150 @@
     if (shouldPersist) {
       persistState();
     }
+    if (!detailView.classList.contains('hidden')) {
+      requestAnimationFrame(updateImageTransform);
+    }
+  }
+
+  function applyImageZoom(nextPercent) {
+    const previousZoom = imageZoomPercent;
+    imageZoomPercent = clamp(Number(nextPercent) || 100, 25, 400);
+    const panScale = previousZoom > 0 ? imageZoomPercent / previousZoom : 1;
+    imagePanX *= panScale;
+    imagePanY *= panScale;
+    if (imageZoomPercent <= 100) {
+      imagePanX = 0;
+      imagePanY = 0;
+    }
+    updateImageTransform();
+  }
+
+  function fitImageToPane(event) {
+    if (event) {
+      event.preventDefault();
+    }
+    imagePanX = 0;
+    imagePanY = 0;
+    applyImageZoom(100);
+    detailView.focus({ preventScroll: true });
+  }
+
+  function updateImageTransform() {
+    if (
+      detailView.classList.contains('hidden')
+      || !detailImage.naturalWidth
+      || !detailImage.naturalHeight
+    ) {
+      return;
+    }
+
+    const bounds = imageStage.getBoundingClientRect();
+    if (bounds.width <= 0 || bounds.height <= 0) {
+      return;
+    }
+
+    const fitScale = Math.min(
+      bounds.width / detailImage.naturalWidth,
+      bounds.height / detailImage.naturalHeight,
+    );
+    const fitWidth = detailImage.naturalWidth * fitScale;
+    const fitHeight = detailImage.naturalHeight * fitScale;
+    const zoomFactor = imageZoomPercent / 100;
+    const maximumPanX = Math.max(0, (fitWidth * zoomFactor - bounds.width) / 2);
+    const maximumPanY = Math.max(0, (fitHeight * zoomFactor - bounds.height) / 2);
+
+    imagePanX = clamp(imagePanX, -maximumPanX, maximumPanX);
+    imagePanY = clamp(imagePanY, -maximumPanY, maximumPanY);
+    detailImage.style.width = `${fitWidth}px`;
+    detailImage.style.height = `${fitHeight}px`;
+    detailImage.style.transform = `translate(-50%, -50%) translate(${imagePanX}px, ${imagePanY}px) scale(${zoomFactor})`;
+    imageStage.classList.toggle('can-pan', maximumPanX > 0 || maximumPanY > 0);
+  }
+
+  function startImagePan(event) {
+    if (event.button !== 0 || !imageStage.classList.contains('can-pan')) {
+      return;
+    }
+    event.preventDefault();
+    imageStage.setPointerCapture(event.pointerId);
+    imageStage.classList.add('dragging');
+    document.body.classList.add('panning-image');
+    imagePanGesture = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      panX: imagePanX,
+      panY: imagePanY,
+    };
+  }
+
+  function moveImagePan(event) {
+    if (!imagePanGesture || imagePanGesture.pointerId !== event.pointerId) {
+      return;
+    }
+    imagePanX = imagePanGesture.panX + event.clientX - imagePanGesture.startX;
+    imagePanY = imagePanGesture.panY + event.clientY - imagePanGesture.startY;
+    updateImageTransform();
+  }
+
+  function finishImagePan(event) {
+    if (!imagePanGesture || imagePanGesture.pointerId !== event.pointerId) {
+      return;
+    }
+    if (imageStage.hasPointerCapture(event.pointerId)) {
+      imageStage.releasePointerCapture(event.pointerId);
+    }
+    imagePanGesture = null;
+    imageStage.classList.remove('dragging');
+    document.body.classList.remove('panning-image');
+  }
+
+  function handleImageWheel(event) {
+    if (event.ctrlKey || event.metaKey) {
+      zoomImageFromWheel(event);
+      return;
+    }
+
+    if (!imageStage.classList.contains('can-pan')) {
+      return;
+    }
+
+    event.preventDefault();
+    const deltaMultiplier = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+      ? 16
+      : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+        ? Math.max(imageStage.clientWidth, imageStage.clientHeight)
+        : 1;
+    imagePanX -= event.deltaX * deltaMultiplier;
+    imagePanY -= event.deltaY * deltaMultiplier;
+    updateImageTransform();
+  }
+
+  function zoomImageFromWheel(event) {
+    event.preventDefault();
+
+    const bounds = imageStage.getBoundingClientRect();
+    const previousFactor = imageZoomPercent / 100;
+    const localX = (event.clientX - bounds.left - bounds.width / 2 - imagePanX) / previousFactor;
+    const localY = (event.clientY - bounds.top - bounds.height / 2 - imagePanY) / previousFactor;
+    const nextPercent = clamp(imageZoomPercent * Math.exp(-event.deltaY * 0.002), 25, 400);
+    const nextFactor = nextPercent / 100;
+
+    imageZoomPercent = nextPercent;
+    imagePanX = event.clientX - bounds.left - bounds.width / 2 - localX * nextFactor;
+    imagePanY = event.clientY - bounds.top - bounds.height / 2 - localY * nextFactor;
+    if (imageZoomPercent <= 100) {
+      imagePanX = 0;
+      imagePanY = 0;
+    }
+    updateImageTransform();
+  }
+
+  function updateImageDimensions() {
+    const width = Math.round(detailImage.naturalWidth);
+    const height = Math.round(detailImage.naturalHeight);
+    imageWidth.textContent = String(Math.max(0, width));
+    imageHeight.textContent = String(Math.max(0, height));
   }
 
   function applyTextZoom() {

@@ -111,14 +111,17 @@ async function openGallery(
   const sendImages = async (): Promise<void> => {
     await panel.webview.postMessage({ type: 'loading' });
     try {
+      if (pendingInitialImageId && initialImageUri) {
+        imageById.set(pendingInitialImageId, initialImageUri);
+        await panel.webview.postMessage({
+          type: 'initialImage',
+          image: toImageRecord(root, initialImageUri, panel.webview),
+        });
+      }
+
       const imageUris = await scanImages(root);
       imageById = new Map(imageUris.map((uri) => [uri.toString(), uri]));
-      const images: ImageRecord[] = imageUris.map((uri) => ({
-        id: uri.toString(),
-        name: path.posix.basename(uri.path),
-        relativePath: relativePath(root, uri),
-        source: panel.webview.asWebviewUri(uri).toString(),
-      }));
+      const images = imageUris.map((uri) => toImageRecord(root, uri, panel.webview));
       const initialImageId = pendingInitialImageId && imageById.has(pendingInitialImageId)
         ? pendingInitialImageId
         : undefined;
@@ -161,6 +164,19 @@ async function openGallery(
     undefined,
     context.subscriptions,
   );
+}
+
+function toImageRecord(
+  root: vscode.Uri,
+  uri: vscode.Uri,
+  webview: vscode.Webview,
+): ImageRecord {
+  return {
+    id: uri.toString(),
+    name: path.posix.basename(uri.path),
+    relativePath: relativePath(root, uri),
+    source: webview.asWebviewUri(uri).toString(),
+  };
 }
 
 async function scanImages(root: vscode.Uri): Promise<vscode.Uri[]> {
@@ -268,7 +284,11 @@ function getHtml(context: vscode.ExtensionContext, webview: vscode.Webview): str
         <button id="back" class="button">← Gallery</button>
         <strong class="column-title">Image</strong>
         <span id="detail-path" class="detail-path"></span>
-        <span id="position" class="image-position"></span>
+        <span class="image-dimensions" title="Original image dimensions (width × height)" aria-label="Original image dimensions: width by height">
+          <span id="image-width" class="dimension-value">—</span>
+          <span class="dimension-separator">×</span>
+          <span id="image-height" class="dimension-value">—</span>
+        </span>
       </div>
       <div class="header-divider" aria-hidden="true"></div>
       <div class="text-header">
@@ -291,7 +311,9 @@ function getHtml(context: vscode.ExtensionContext, webview: vscode.Webview): str
     <main class="detail-content">
       <div class="image-pane">
         <button id="previous" class="image-navigation previous" title="Previous image (Left Arrow)" aria-label="Previous image">‹</button>
-        <img id="detail-image" alt="Selected image">
+        <div id="image-stage" class="image-stage" title="Pinch to zoom · Drag or two-finger scroll to pan · Double-click to reset">
+          <img id="detail-image" alt="Selected image" draggable="false">
+        </div>
         <button id="next" class="image-navigation next" title="Next image (Right Arrow)" aria-label="Next image">›</button>
         <div class="navigation-hint">← / → 切换图片 · Switch images</div>
       </div>

@@ -30,6 +30,9 @@
 - 读取与图片同名的 `.txt` Caption，不修改数据集中的任何文件。
 - 默认使用 Markdown 渲染，也可切换为 Raw 原始文本或格式化 JSON。
 - 拖动中间分隔线，自由调整 Image 与 Text 两栏宽度。
+- 图片默认按当前可用宽度或高度完整适配，调整窗口或分隔线后会自动重新计算。
+- 相对 Fit 将图片缩放到 25%–400%，放大后可按住拖动查看细节。
+- 点击 Fit 或双击图片即可恢复完整适配，也可用 `Ctrl/Command + 滚轮` 快速缩放。
 - 将 Caption 字体缩放到 70%–180%。
 - 使用 `←` / `→` 键或图片两侧的半透明按钮切换图片。
 - 使用 `Escape` 返回 Gallery，并保留搜索条件和缩略图状态。
@@ -60,6 +63,8 @@ code --install-extension xingfu-yi.image-caption-gallery --force
 | --- | --- | --- |
 | 打开 Image Caption Gallery | `Command+Option+G`（`⌘⌥G`） | `Ctrl+Alt+G` |
 | 上一张 / 下一张图片 | `←` / `→` | `←` / `→` |
+| 缩放图片 | `Command + 滚轮` | `Ctrl + 滚轮` |
+| 完整适配图片 | 双击图片 | 双击图片 |
 | 返回 Gallery | `Escape` | `Escape` |
 
 ## 数据集目录格式

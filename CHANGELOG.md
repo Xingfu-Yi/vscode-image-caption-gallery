@@ -2,6 +2,8 @@
 
 ## 0.0.7
 
+- Fit images to the currently available pane without cropping and recompute the fit after window or divider resizing.
+- Add persistent 25%–400% image zoom, drag-to-pan, Fit reset, double-click reset, and Ctrl/Command-wheel zooming.
 - Ship the bilingual Marketplace README and both product screenshots inside the VSIX.
 - Show the macOS launcher as `Command+Option+G` (`⌘⌥G`) in user-facing documentation.
 - Use the Marketplace extension identifier in installation instructions so they stay current across releases.

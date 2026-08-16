@@ -8,12 +8,16 @@
   const sizeInput = document.querySelector('#thumbnail-size');
   const sizeValue = document.querySelector('#thumbnail-size-value');
   const count = document.querySelector('#count');
+  const imageStage = document.querySelector('#image-stage');
   const detailImage = document.querySelector('#detail-image');
   const detailPath = document.querySelector('#detail-path');
   const position = document.querySelector('#position');
   const captionPreview = document.querySelector('#caption-preview');
   const captionMode = document.querySelector('#caption-mode');
   const splitter = document.querySelector('#splitter');
+  const imageZoom = document.querySelector('#image-zoom');
+  const imageZoomValue = document.querySelector('#image-zoom-value');
+  const fitImageButton = document.querySelector('#fit-image');
   const textZoom = document.querySelector('#text-zoom');
   const textZoomValue = document.querySelector('#text-zoom-value');
 
@@ -26,6 +30,10 @@
   let captionText = '';
   let renderedCaption = '';
   let splitRatio = clamp(Number(persisted.splitRatio) || 0.64, 0.3, 0.8);
+  let imageZoomPercent = clamp(Number(persisted.imageZoomPercent) || 100, 25, 400);
+  let imagePanX = 0;
+  let imagePanY = 0;
+  let imagePanGesture = null;
   let textZoomPercent = clamp(Number(persisted.textZoomPercent) || 100, 70, 180);
 
   sizeInput.value = String(persisted.thumbnailSize || defaultSize);
@@ -33,9 +41,11 @@
   captionMode.value = ['markdown', 'raw', 'json'].includes(persisted.captionMode)
     ? persisted.captionMode
     : 'markdown';
+  imageZoom.value = String(imageZoomPercent);
   textZoom.value = String(textZoomPercent);
   applyThumbnailSize();
   applySplitRatio(splitRatio, false);
+  applyImageZoom(imageZoomPercent, false);
   applyTextZoom();
 
   sizeInput.addEventListener('input', applyThumbnailSize);
@@ -49,6 +59,19 @@
   document.querySelector('.image-pane').addEventListener('click', () => {
     detailView.focus({ preventScroll: true });
   });
+  imageZoom.addEventListener('input', () => applyImageZoom(Number(imageZoom.value)));
+  fitImageButton.addEventListener('click', fitImageToPane);
+  detailImage.addEventListener('load', () => {
+    imagePanX = 0;
+    imagePanY = 0;
+    updateImageTransform();
+  });
+  imageStage.addEventListener('pointerdown', startImagePan);
+  imageStage.addEventListener('pointermove', moveImagePan);
+  imageStage.addEventListener('pointerup', finishImagePan);
+  imageStage.addEventListener('pointercancel', finishImagePan);
+  imageStage.addEventListener('dblclick', fitImageToPane);
+  imageStage.addEventListener('wheel', zoomImageFromWheel, { passive: false });
   captionMode.addEventListener('change', () => {
     renderCaptionView();
     persistState();
@@ -66,7 +89,11 @@
     event.stopPropagation();
     applySplitRatio(splitRatio + (event.key === 'ArrowLeft' ? -0.02 : 0.02));
   });
-  window.addEventListener('resize', () => applySplitRatio(splitRatio, false));
+  window.addEventListener('resize', () => {
+    applySplitRatio(splitRatio, false);
+    requestAnimationFrame(updateImageTransform);
+  });
+  new ResizeObserver(updateImageTransform).observe(imageStage);
 
   window.addEventListener('keydown', (event) => {
     if (detailView.classList.contains('hidden')) {
@@ -74,6 +101,7 @@
     }
 
     const focusedControl = document.activeElement === captionMode
+      || document.activeElement === imageZoom
       || document.activeElement === textZoom
       || document.activeElement === splitter;
     const navigationKey = !focusedControl
@@ -174,6 +202,7 @@
     detailView.classList.remove('hidden');
     applySplitRatio(splitRatio, false);
     loadCurrentImage();
+    requestAnimationFrame(updateImageTransform);
     detailView.focus({ preventScroll: true });
   }
 
@@ -186,6 +215,8 @@
     currentCaptionRequest = image.id;
     captionText = '';
     renderedCaption = '';
+    imagePanX = 0;
+    imagePanY = 0;
     detailImage.src = image.source;
     detailImage.alt = image.name;
     detailPath.textContent = image.relativePath;
@@ -195,6 +226,9 @@
     document.querySelector('#previous').disabled = currentIndex === 0;
     document.querySelector('#next').disabled = currentIndex === filteredImages.length - 1;
     vscode.postMessage({ type: 'loadCaption', id: image.id });
+    if (detailImage.complete && detailImage.naturalWidth > 0) {
+      requestAnimationFrame(updateImageTransform);
+    }
   }
 
   function move(offset) {
@@ -252,6 +286,128 @@
     if (shouldPersist) {
       persistState();
     }
+    requestAnimationFrame(updateImageTransform);
+  }
+
+  function applyImageZoom(nextPercent, shouldPersist = true) {
+    const previousZoom = imageZoomPercent;
+    imageZoomPercent = clamp(Number(nextPercent) || 100, 25, 400);
+    const panScale = previousZoom > 0 ? imageZoomPercent / previousZoom : 1;
+    imagePanX *= panScale;
+    imagePanY *= panScale;
+    if (imageZoomPercent <= 100) {
+      imagePanX = 0;
+      imagePanY = 0;
+    }
+    imageZoom.value = String(imageZoomPercent);
+    imageZoomValue.value = `${imageZoomPercent}%`;
+    updateImageTransform();
+    if (shouldPersist) {
+      persistState();
+    }
+  }
+
+  function fitImageToPane(event) {
+    if (event) {
+      event.preventDefault();
+    }
+    imagePanX = 0;
+    imagePanY = 0;
+    applyImageZoom(100);
+    detailView.focus({ preventScroll: true });
+  }
+
+  function updateImageTransform() {
+    if (!detailImage.naturalWidth || !detailImage.naturalHeight) {
+      return;
+    }
+
+    const bounds = imageStage.getBoundingClientRect();
+    if (bounds.width <= 0 || bounds.height <= 0) {
+      return;
+    }
+
+    const fitScale = Math.min(
+      bounds.width / detailImage.naturalWidth,
+      bounds.height / detailImage.naturalHeight,
+    );
+    const fitWidth = detailImage.naturalWidth * fitScale;
+    const fitHeight = detailImage.naturalHeight * fitScale;
+    const zoomFactor = imageZoomPercent / 100;
+    const maximumPanX = Math.max(0, (fitWidth * zoomFactor - bounds.width) / 2);
+    const maximumPanY = Math.max(0, (fitHeight * zoomFactor - bounds.height) / 2);
+
+    imagePanX = clamp(imagePanX, -maximumPanX, maximumPanX);
+    imagePanY = clamp(imagePanY, -maximumPanY, maximumPanY);
+    detailImage.style.width = `${fitWidth}px`;
+    detailImage.style.height = `${fitHeight}px`;
+    detailImage.style.transform = `translate(-50%, -50%) translate(${imagePanX}px, ${imagePanY}px) scale(${zoomFactor})`;
+    imageStage.classList.toggle('can-pan', maximumPanX > 0 || maximumPanY > 0);
+  }
+
+  function startImagePan(event) {
+    if (event.button !== 0 || !imageStage.classList.contains('can-pan')) {
+      return;
+    }
+    event.preventDefault();
+    imageStage.setPointerCapture(event.pointerId);
+    imageStage.classList.add('dragging');
+    document.body.classList.add('panning-image');
+    imagePanGesture = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      panX: imagePanX,
+      panY: imagePanY,
+    };
+  }
+
+  function moveImagePan(event) {
+    if (!imagePanGesture || imagePanGesture.pointerId !== event.pointerId) {
+      return;
+    }
+    imagePanX = imagePanGesture.panX + event.clientX - imagePanGesture.startX;
+    imagePanY = imagePanGesture.panY + event.clientY - imagePanGesture.startY;
+    updateImageTransform();
+  }
+
+  function finishImagePan(event) {
+    if (!imagePanGesture || imagePanGesture.pointerId !== event.pointerId) {
+      return;
+    }
+    if (imageStage.hasPointerCapture(event.pointerId)) {
+      imageStage.releasePointerCapture(event.pointerId);
+    }
+    imagePanGesture = null;
+    imageStage.classList.remove('dragging');
+    document.body.classList.remove('panning-image');
+  }
+
+  function zoomImageFromWheel(event) {
+    if (!event.ctrlKey && !event.metaKey) {
+      return;
+    }
+    event.preventDefault();
+
+    const bounds = imageStage.getBoundingClientRect();
+    const previousFactor = imageZoomPercent / 100;
+    const localX = (event.clientX - bounds.left - bounds.width / 2 - imagePanX) / previousFactor;
+    const localY = (event.clientY - bounds.top - bounds.height / 2 - imagePanY) / previousFactor;
+    const direction = event.deltaY < 0 ? 1 : -1;
+    const nextPercent = clamp(imageZoomPercent + direction * 10, 25, 400);
+    const nextFactor = nextPercent / 100;
+
+    imageZoomPercent = nextPercent;
+    imagePanX = event.clientX - bounds.left - bounds.width / 2 - localX * nextFactor;
+    imagePanY = event.clientY - bounds.top - bounds.height / 2 - localY * nextFactor;
+    if (imageZoomPercent <= 100) {
+      imagePanX = 0;
+      imagePanY = 0;
+    }
+    imageZoom.value = String(imageZoomPercent);
+    imageZoomValue.value = `${imageZoomPercent}%`;
+    updateImageTransform();
+    persistState();
   }
 
   function applyTextZoom() {
@@ -331,6 +487,7 @@
       search: search.value,
       captionMode: captionMode.value,
       splitRatio,
+      imageZoomPercent,
       textZoomPercent,
     });
   }

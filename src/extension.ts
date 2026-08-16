@@ -269,6 +269,12 @@ function getHtml(context: vscode.ExtensionContext, webview: vscode.Webview): str
         <strong class="column-title">Image</strong>
         <span id="detail-path" class="detail-path"></span>
         <span id="position" class="image-position"></span>
+        <label class="image-zoom-control" title="Image zoom relative to Fit">
+          <span>Zoom</span>
+          <input id="image-zoom" type="range" min="25" max="400" step="5" value="100" aria-label="Image zoom percentage">
+          <output id="image-zoom-value">100%</output>
+        </label>
+        <button id="fit-image" class="fit-button" title="Fit image to pane (double-click image)" aria-label="Fit image to pane">Fit</button>
       </div>
       <div class="header-divider" aria-hidden="true"></div>
       <div class="text-header">
@@ -291,9 +297,11 @@ function getHtml(context: vscode.ExtensionContext, webview: vscode.Webview): str
     <main class="detail-content">
       <div class="image-pane">
         <button id="previous" class="image-navigation previous" title="Previous image (Left Arrow)" aria-label="Previous image">‹</button>
-        <img id="detail-image" alt="Selected image">
+        <div id="image-stage" class="image-stage" title="Drag to pan · Ctrl/Cmd + wheel to zoom · Double-click to fit">
+          <img id="detail-image" alt="Selected image" draggable="false">
+        </div>
         <button id="next" class="image-navigation next" title="Next image (Right Arrow)" aria-label="Next image">›</button>
-        <div class="navigation-hint">← / → 切换图片 · Switch images</div>
+        <div class="navigation-hint">← / → 切换图片 · Drag to pan · Ctrl/⌘ + scroll to zoom</div>
       </div>
       <div id="splitter" class="splitter" role="separator" aria-label="Resize image and text panes" aria-orientation="vertical" aria-valuemin="30" aria-valuemax="80" aria-valuenow="64" tabindex="0"></div>
       <aside class="caption-pane">

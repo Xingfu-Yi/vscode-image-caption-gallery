@@ -13,6 +13,9 @@
   const position = document.querySelector('#position');
   const captionPreview = document.querySelector('#caption-preview');
   const captionMode = document.querySelector('#caption-mode');
+  const splitter = document.querySelector('#splitter');
+  const textZoom = document.querySelector('#text-zoom');
+  const textZoomValue = document.querySelector('#text-zoom-value');
 
   const persisted = vscode.getState() || {};
   const defaultSize = Number(document.body.dataset.defaultThumbnailSize || 220);
@@ -22,13 +25,18 @@
   let currentCaptionRequest = '';
   let captionText = '';
   let renderedCaption = '';
+  let splitRatio = clamp(Number(persisted.splitRatio) || 0.64, 0.3, 0.8);
+  let textZoomPercent = clamp(Number(persisted.textZoomPercent) || 100, 70, 180);
 
   sizeInput.value = String(persisted.thumbnailSize || defaultSize);
   search.value = persisted.search || '';
   captionMode.value = ['markdown', 'raw', 'json'].includes(persisted.captionMode)
     ? persisted.captionMode
     : 'markdown';
+  textZoom.value = String(textZoomPercent);
   applyThumbnailSize();
+  applySplitRatio(splitRatio, false);
+  applyTextZoom();
 
   sizeInput.addEventListener('input', applyThumbnailSize);
   search.addEventListener('input', renderGallery);
@@ -45,13 +53,33 @@
     renderCaptionView();
     persistState();
   });
+  textZoom.addEventListener('input', applyTextZoom);
+  splitter.addEventListener('pointerdown', startSplitResize);
+  splitter.addEventListener('pointermove', resizeSplit);
+  splitter.addEventListener('pointerup', finishSplitResize);
+  splitter.addEventListener('pointercancel', finishSplitResize);
+  splitter.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    applySplitRatio(splitRatio + (event.key === 'ArrowLeft' ? -0.02 : 0.02));
+  });
+  window.addEventListener('resize', () => applySplitRatio(splitRatio, false));
 
   window.addEventListener('keydown', (event) => {
     if (detailView.classList.contains('hidden')) {
       return;
     }
 
-    const navigationKey = !event.ctrlKey && !event.metaKey && !event.shiftKey;
+    const focusedControl = document.activeElement === captionMode
+      || document.activeElement === textZoom
+      || document.activeElement === splitter;
+    const navigationKey = !focusedControl
+      && !event.ctrlKey
+      && !event.metaKey
+      && !event.shiftKey;
     if (navigationKey && event.key === 'ArrowLeft') {
       event.preventDefault();
       move(-1);
@@ -144,6 +172,7 @@
     }
     galleryView.classList.add('hidden');
     detailView.classList.remove('hidden');
+    applySplitRatio(splitRatio, false);
     loadCurrentImage();
     detailView.focus({ preventScroll: true });
   }
@@ -180,6 +209,56 @@
   function showGallery() {
     detailView.classList.add('hidden');
     galleryView.classList.remove('hidden');
+  }
+
+  function startSplitResize(event) {
+    splitter.setPointerCapture(event.pointerId);
+    splitter.classList.add('dragging');
+    document.body.classList.add('resizing-panes');
+    updateSplitFromPointer(event, false);
+  }
+
+  function resizeSplit(event) {
+    if (!splitter.hasPointerCapture(event.pointerId)) {
+      return;
+    }
+    updateSplitFromPointer(event, false);
+  }
+
+  function finishSplitResize(event) {
+    if (splitter.hasPointerCapture(event.pointerId)) {
+      splitter.releasePointerCapture(event.pointerId);
+    }
+    splitter.classList.remove('dragging');
+    document.body.classList.remove('resizing-panes');
+    persistState();
+  }
+
+  function updateSplitFromPointer(event, shouldPersist) {
+    const bounds = detailView.getBoundingClientRect();
+    if (bounds.width <= 0) {
+      return;
+    }
+    applySplitRatio((event.clientX - bounds.left) / bounds.width, shouldPersist);
+  }
+
+  function applySplitRatio(nextRatio, shouldPersist = true) {
+    const availableWidth = detailView.clientWidth || window.innerWidth;
+    const minimumRatio = Math.max(0.3, 260 / availableWidth);
+    const maximumRatio = Math.min(0.8, Math.max(minimumRatio, (availableWidth - 287) / availableWidth));
+    splitRatio = clamp(nextRatio, minimumRatio, maximumRatio);
+    detailView.style.setProperty('--image-column', `${splitRatio * 100}%`);
+    splitter.setAttribute('aria-valuenow', String(Math.round(splitRatio * 100)));
+    if (shouldPersist) {
+      persistState();
+    }
+  }
+
+  function applyTextZoom() {
+    textZoomPercent = clamp(Number(textZoom.value), 70, 180);
+    detailView.style.setProperty('--text-zoom', `${textZoomPercent}%`);
+    textZoomValue.value = `${textZoomPercent}%`;
+    persistState();
   }
 
   function renderCaptionView() {
@@ -251,7 +330,13 @@
       thumbnailSize: Number(sizeInput.value),
       search: search.value,
       captionMode: captionMode.value,
+      splitRatio,
+      textZoomPercent,
     });
+  }
+
+  function clamp(value, minimum, maximum) {
+    return Math.min(maximum, Math.max(minimum, value));
   }
 
   vscode.postMessage({ type: 'ready' });

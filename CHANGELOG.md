@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.0.6
+
+- Add a unified, column-aligned header with Image metadata on the left and Text controls on the right.
+- Rename the caption column to **Text**.
+- Add a draggable, keyboard-accessible divider that remembers its split ratio.
+- Add persistent Text scaling from 70% to 180%, defaulting to 100%.
+
 ## 0.0.5
 
 - Move detail controls into a compact overlay on the image pane so captions use the full height.

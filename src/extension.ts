@@ -263,30 +263,40 @@ function getHtml(context: vscode.ExtensionContext, webview: vscode.Webview): str
   </section>
 
   <section id="detail-view" class="detail-view hidden" tabindex="-1">
+    <header class="detail-header">
+      <div class="image-header">
+        <button id="back" class="button">← Gallery</button>
+        <strong class="column-title">Image</strong>
+        <span id="detail-path" class="detail-path"></span>
+        <span id="position" class="image-position"></span>
+      </div>
+      <div class="header-divider" aria-hidden="true"></div>
+      <div class="text-header">
+        <strong class="column-title">Text</strong>
+        <label class="mode-control">
+          <span class="visually-hidden">Text view</span>
+          <select id="caption-mode" aria-label="Text view mode">
+            <option value="markdown" selected>Markdown</option>
+            <option value="raw">Raw text</option>
+            <option value="json">JSON</option>
+          </select>
+        </label>
+        <label class="zoom-control" title="Text size">
+          <span>Font</span>
+          <input id="text-zoom" type="range" min="70" max="180" step="10" value="100" aria-label="Text size percentage">
+          <output id="text-zoom-value">100%</output>
+        </label>
+      </div>
+    </header>
     <main class="detail-content">
       <div class="image-pane">
-        <header class="image-toolbar">
-          <button id="back" class="button">← Gallery</button>
-          <span id="position" class="image-position"></span>
-          <span id="detail-path" class="detail-path"></span>
-        </header>
         <button id="previous" class="image-navigation previous" title="Previous image (Left Arrow)" aria-label="Previous image">‹</button>
         <img id="detail-image" alt="Selected image">
         <button id="next" class="image-navigation next" title="Next image (Right Arrow)" aria-label="Next image">›</button>
         <div class="navigation-hint">← / → 切换图片 · Switch images</div>
       </div>
+      <div id="splitter" class="splitter" role="separator" aria-label="Resize image and text panes" aria-orientation="vertical" aria-valuemin="30" aria-valuemax="80" aria-valuenow="64" tabindex="0"></div>
       <aside class="caption-pane">
-        <div class="caption-header">
-          <span class="caption-title">Prompt / Caption</span>
-          <label class="mode-control">
-            <span class="visually-hidden">Caption view</span>
-            <select id="caption-mode" aria-label="Caption view mode">
-              <option value="markdown" selected>Markdown</option>
-              <option value="raw">Raw text</option>
-              <option value="json">JSON</option>
-            </select>
-          </label>
-        </div>
         <div id="caption-preview" class="caption-preview markdown-view" aria-live="polite"></div>
       </aside>
     </main>

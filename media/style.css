@@ -19,6 +19,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   color: inherit;
   font: inherit;
@@ -26,6 +27,17 @@ textarea {
 
 .hidden {
   display: none !important;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+  white-space: nowrap;
 }
 
 .toolbar {
@@ -59,6 +71,7 @@ textarea {
 }
 
 .search:focus,
+select:focus,
 textarea:focus {
   border-color: var(--vscode-focusBorder);
 }
@@ -168,6 +181,7 @@ button:disabled {
 .detail-view {
   height: 100vh;
   overflow: hidden;
+  outline: none;
 }
 
 .detail-toolbar {
@@ -220,22 +234,108 @@ button:disabled {
   padding: 18px;
 }
 
-.caption-pane label {
+.caption-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.caption-title {
   font-weight: 600;
 }
 
-.caption-pane textarea {
+.mode-control select {
+  height: 30px;
+  padding: 0 28px 0 9px;
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
+  border-radius: 5px;
+  outline: none;
+  color: var(--vscode-dropdown-foreground);
+  background: var(--vscode-dropdown-background);
+}
+
+.caption-pane textarea,
+.caption-preview {
   min-height: 0;
   flex: 1;
-  resize: none;
   padding: 12px;
+  overflow: auto;
   border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
   border-radius: 6px;
   outline: none;
   color: var(--vscode-input-foreground);
   background: var(--vscode-input-background);
-  font-family: var(--vscode-editor-font-family);
   line-height: 1.55;
+}
+
+.caption-pane textarea {
+  resize: none;
+  font-family: var(--vscode-editor-font-family);
+}
+
+.markdown-view > :first-child {
+  margin-top: 0;
+}
+
+.markdown-view > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-view h1,
+.markdown-view h2 {
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.markdown-view blockquote {
+  margin-left: 0;
+  padding-left: 14px;
+  border-left: 3px solid var(--vscode-textBlockQuote-border);
+  color: var(--vscode-descriptionForeground);
+}
+
+.markdown-view pre,
+.markdown-view code {
+  border-radius: 4px;
+  background: var(--vscode-textCodeBlock-background);
+  font-family: var(--vscode-editor-font-family);
+}
+
+.markdown-view code {
+  padding: 0.15em 0.35em;
+}
+
+.markdown-view pre {
+  padding: 12px;
+  overflow: auto;
+}
+
+.markdown-view pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.markdown-view table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.markdown-view th,
+.markdown-view td {
+  padding: 6px 9px;
+  border: 1px solid var(--vscode-panel-border);
+  text-align: left;
+}
+
+.markdown-view a {
+  color: var(--vscode-textLink-foreground);
+}
+
+.json-view {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--vscode-editor-font-family);
 }
 
 .hint {

@@ -12,6 +12,9 @@
   const detailPath = document.querySelector('#detail-path');
   const position = document.querySelector('#position');
   const caption = document.querySelector('#caption');
+  const captionPreview = document.querySelector('#caption-preview');
+  const captionMode = document.querySelector('#caption-mode');
+  const captionHint = document.querySelector('#caption-hint');
   const saveState = document.querySelector('#save-state');
 
   const persisted = vscode.getState() || {};
@@ -21,9 +24,14 @@
   let currentIndex = -1;
   let saveTimer;
   let currentCaptionRequest = '';
+  let renderedCaption = '';
+  let renderPending = false;
 
   sizeInput.value = String(persisted.thumbnailSize || defaultSize);
   search.value = persisted.search || '';
+  captionMode.value = ['markdown', 'raw', 'json'].includes(persisted.captionMode)
+    ? persisted.captionMode
+    : 'markdown';
   applyThumbnailSize();
 
   sizeInput.addEventListener('input', applyThumbnailSize);
@@ -34,8 +42,14 @@
   document.querySelector('#back').addEventListener('click', showGallery);
   document.querySelector('#previous').addEventListener('click', () => move(-1));
   document.querySelector('#next').addEventListener('click', () => move(1));
+  document.querySelector('.image-pane').addEventListener('click', () => {
+    detailView.focus({ preventScroll: true });
+  });
+  captionMode.addEventListener('change', changeCaptionMode);
 
   caption.addEventListener('input', () => {
+    renderedCaption = '';
+    renderPending = false;
     saveState.textContent = 'Unsaved';
     clearTimeout(saveTimer);
     saveTimer = setTimeout(saveCurrentCaption, 650);
@@ -43,10 +57,17 @@
 
   window.addEventListener('keydown', (event) => {
     if (!detailView.classList.contains('hidden')) {
-      if (event.altKey && event.key === 'ArrowLeft') {
+      const captionHasFocus = document.activeElement === caption;
+      const plainArrow = !captionHasFocus
+        && !event.altKey
+        && !event.ctrlKey
+        && !event.metaKey
+        && !event.shiftKey;
+
+      if ((event.altKey || plainArrow) && event.key === 'ArrowLeft') {
         event.preventDefault();
         move(-1);
-      } else if (event.altKey && event.key === 'ArrowRight') {
+      } else if ((event.altKey || plainArrow) && event.key === 'ArrowRight') {
         event.preventDefault();
         move(1);
       } else if (event.key === 'Escape') {
@@ -81,9 +102,18 @@
 
     if (message.type === 'caption' && message.id === currentCaptionRequest) {
       caption.value = message.caption;
+      renderedCaption = message.renderedCaption;
+      renderPending = false;
       caption.disabled = false;
       saveState.textContent = 'Saved';
-      caption.focus();
+      renderCaptionView();
+      return;
+    }
+
+    if (message.type === 'renderedCaption' && message.id === currentCaptionRequest) {
+      renderedCaption = message.renderedCaption;
+      renderPending = false;
+      renderCaptionView();
       return;
     }
 
@@ -146,6 +176,7 @@
     galleryView.classList.add('hidden');
     detailView.classList.remove('hidden');
     loadCurrentImage();
+    detailView.focus({ preventScroll: true });
   }
 
   function loadCurrentImage() {
@@ -161,6 +192,9 @@
     position.textContent = `${currentIndex + 1} / ${filteredImages.length}`;
     caption.value = '';
     caption.disabled = true;
+    renderedCaption = '';
+    renderPending = false;
+    captionPreview.textContent = 'Loading caption…';
     saveState.textContent = 'Loading…';
     document.querySelector('#previous').disabled = currentIndex === 0;
     document.querySelector('#next').disabled = currentIndex === filteredImages.length - 1;
@@ -200,10 +234,116 @@
     vscode.postMessage({ type: 'saveCaption', id: image.id, caption: caption.value });
   }
 
+  function changeCaptionMode() {
+    if (captionMode.value !== 'raw') {
+      flushPendingSave();
+    }
+    renderCaptionView();
+    persistState();
+
+    if (captionMode.value === 'raw' && !caption.disabled) {
+      caption.focus({ preventScroll: true });
+    } else {
+      detailView.focus({ preventScroll: true });
+    }
+  }
+
+  function renderCaptionView() {
+    const mode = captionMode.value;
+    const showRaw = mode === 'raw';
+    caption.classList.toggle('hidden', !showRaw);
+    captionPreview.classList.toggle('hidden', showRaw);
+    captionPreview.classList.toggle('markdown-view', mode === 'markdown');
+    captionPreview.classList.toggle('json-view', mode === 'json');
+
+    if (showRaw) {
+      captionHint.textContent = 'Auto-saves after typing · Ctrl/Cmd+S saves · Alt+←/→ switches images · Esc returns';
+      return;
+    }
+
+    if (caption.disabled) {
+      captionPreview.textContent = 'Loading caption…';
+      return;
+    }
+
+    if (mode === 'json') {
+      renderJsonPreview();
+      captionHint.textContent = 'Formatted JSON preview · Select Raw text to edit · ←/→ switches images · Esc returns';
+      return;
+    }
+
+    captionHint.textContent = 'Rendered Markdown · Select Raw text to edit · ←/→ switches images · Esc returns';
+    if (!caption.value.trim()) {
+      captionPreview.textContent = 'No caption yet. Select Raw text to start writing.';
+      return;
+    }
+
+    if (renderedCaption) {
+      setSanitizedMarkdown(renderedCaption);
+      return;
+    }
+
+    if (!renderPending) {
+      renderPending = true;
+      captionPreview.textContent = 'Rendering Markdown…';
+      vscode.postMessage({
+        type: 'renderCaption',
+        id: currentCaptionRequest,
+        caption: caption.value,
+      });
+    }
+  }
+
+  function renderJsonPreview() {
+    if (!caption.value.trim()) {
+      captionPreview.textContent = 'No caption yet.';
+      return;
+    }
+
+    try {
+      captionPreview.textContent = JSON.stringify(JSON.parse(caption.value), null, 2);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      captionPreview.textContent = `Invalid JSON: ${message}\n\n${caption.value}`;
+    }
+  }
+
+  function setSanitizedMarkdown(html) {
+    const allowedTags = new Set([
+      'a', 'blockquote', 'br', 'code', 'del', 'div', 'em', 'h1', 'h2', 'h3', 'h4', 'h5',
+      'h6', 'hr', 'li', 'ol', 'p', 'pre', 's', 'span', 'strong', 'table', 'tbody', 'td', 'th',
+      'thead', 'tr', 'ul',
+    ]);
+    const template = document.createElement('template');
+    template.innerHTML = html;
+
+    for (const element of [...template.content.querySelectorAll('*')]) {
+      const tag = element.tagName.toLocaleLowerCase();
+      if (!allowedTags.has(tag)) {
+        element.replaceWith(document.createTextNode(element.textContent || ''));
+        continue;
+      }
+
+      const href = tag === 'a' ? element.getAttribute('href') || '' : '';
+      for (const attribute of [...element.attributes]) {
+        element.removeAttribute(attribute.name);
+      }
+
+      if (tag === 'a' && /^(https?:|mailto:)/i.test(href)) {
+        element.setAttribute('href', href);
+        element.setAttribute('target', '_blank');
+        element.setAttribute('rel', 'noreferrer noopener');
+      }
+    }
+
+    captionPreview.replaceChildren(template.content);
+  }
+
   function persistState() {
     vscode.setState({
       thumbnailSize: Number(sizeInput.value),
       search: search.value,
+      captionMode: captionMode.value,
     });
   }
 

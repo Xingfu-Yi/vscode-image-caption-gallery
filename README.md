@@ -9,16 +9,18 @@ It combines two modes in one editor tab:
 
 ## Features
 
-- Open a folder from the Explorer context menu or Command Palette.
-- Right-click an image to open its folder and jump directly to that image.
-- With an image selected or open, launch immediately with `Cmd+Alt+G` on macOS or `Ctrl+Alt+G` on Windows/Linux.
+- Open a folder or image from the single **Image Caption Gallery** Explorer action.
+- See the launch shortcut directly in the Explorer context menu.
+- Launch from anywhere with `Cmd+Alt+G` on macOS or `Ctrl+Alt+G` on Windows/Linux.
 - Recursively discover `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp`, and `.avif` images.
 - Resize thumbnails from 96 px to 480 px instead of choosing a fixed column count.
 - Search by filename or relative path.
 - Click any thumbnail to open a side-by-side image/caption editor.
 - Read and write same-name `.txt` sidecar captions.
+- Render captions as Markdown by default, with selectable Raw text and formatted JSON modes.
 - Create a missing `.txt` caption file on first save.
-- Navigate with toolbar buttons or `Alt+Left` / `Alt+Right`.
+- Navigate with toolbar buttons or plain `Left` / `Right` after opening an image.
+- While editing Raw text, use `Alt+Left` / `Alt+Right` so normal cursor movement remains available.
 - Return to the gallery with `Escape` while preserving the gallery state.
 - Work with local folders and VS Code Remote SSH workspaces.
 
@@ -45,9 +47,9 @@ npm install
 npm run compile
 ```
 
-Open this repository in VS Code and press `F5`. In the Extension Development Host, open a folder containing images and run **Image Caption Gallery: Open Gallery**.
+Open this repository in VS Code and press `F5`. In the Extension Development Host, open a folder containing images and run **Image Caption Gallery**.
 
-To test the focused-image workflow, click an image in Explorer and press `Cmd+Alt+G` on macOS or `Ctrl+Alt+G` on Windows/Linux. You can also right-click the image and choose **Image Caption Gallery: Open Selected Image**.
+To test the focused-image workflow, click an image in Explorer and press `Cmd+Alt+G` on macOS or `Ctrl+Alt+G` on Windows/Linux. You can also right-click either an image or a folder and choose **Image Caption Gallery**.
 
 ## Current status
 

@@ -26,6 +26,13 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand(
       'imageCaptionGallery.open',
       async (selectedUri?: vscode.Uri) => {
+        const imageUri = resolveSelectedImage(selectedUri);
+        if (imageUri) {
+          const root = imageUri.with({ path: path.posix.dirname(imageUri.path) });
+          await openGallery(context, root, imageUri);
+          return;
+        }
+
         const root = await resolveRoot(selectedUri);
         if (!root) {
           return;
@@ -34,27 +41,12 @@ export function activate(context: vscode.ExtensionContext): void {
         await openGallery(context, root);
       },
     ),
-    vscode.commands.registerCommand(
-      'imageCaptionGallery.openSelected',
-      async (selectedUri?: vscode.Uri) => {
-        const imageUri = resolveSelectedImage(selectedUri);
-        if (!imageUri) {
-          await vscode.window.showWarningMessage(
-            'Select or open a supported image, then run Image Caption Gallery again.',
-          );
-          return;
-        }
-
-        const root = imageUri.with({ path: path.posix.dirname(imageUri.path) });
-        await openGallery(context, root, imageUri);
-      },
-    ),
   );
 }
 
 function resolveSelectedImage(selectedUri?: vscode.Uri): vscode.Uri | undefined {
-  if (selectedUri && isImageUri(selectedUri)) {
-    return selectedUri;
+  if (selectedUri) {
+    return isImageUri(selectedUri) ? selectedUri : undefined;
   }
 
   const activeTabInput = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
@@ -156,10 +148,21 @@ async function openGallery(
 
       if (message.type === 'loadCaption') {
         const caption = await readCaption(captionUri);
+        const renderedCaption = await renderMarkdown(caption);
         await panel.webview.postMessage({
           type: 'caption',
           id: message.id,
           caption,
+          renderedCaption,
+        });
+      }
+
+      if (message.type === 'renderCaption') {
+        const renderedCaption = await renderMarkdown(message.caption ?? '');
+        await panel.webview.postMessage({
+          type: 'renderedCaption',
+          id: message.id,
+          renderedCaption,
         });
       }
 
@@ -213,6 +216,23 @@ async function readCaption(uri: vscode.Uri): Promise<string> {
   }
 }
 
+async function renderMarkdown(caption: string): Promise<string> {
+  try {
+    return await vscode.commands.executeCommand<string>('markdown.api.render', caption) ?? '';
+  } catch {
+    return `<pre>${escapeHtml(caption)}</pre>`;
+  }
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
 function sidecarUri(imageUri: vscode.Uri): vscode.Uri {
   return imageUri.with({ path: imageUri.path.replace(/\.[^/.]+$/, '.txt') });
 }
@@ -258,13 +278,13 @@ function getHtml(context: vscode.ExtensionContext, webview: vscode.Webview): str
     <div id="empty" class="empty">Loading images…</div>
   </section>
 
-  <section id="detail-view" class="detail-view hidden">
+  <section id="detail-view" class="detail-view hidden" tabindex="-1">
     <header class="toolbar detail-toolbar">
       <button id="back" class="button">← Gallery</button>
       <span id="detail-path" class="detail-path"></span>
       <span id="position" class="muted"></span>
-      <button id="previous" class="icon-button" title="Previous image (Alt+Left)" aria-label="Previous image">←</button>
-      <button id="next" class="icon-button" title="Next image (Alt+Right)" aria-label="Next image">→</button>
+      <button id="previous" class="icon-button" title="Previous image (Left Arrow)" aria-label="Previous image">←</button>
+      <button id="next" class="icon-button" title="Next image (Right Arrow)" aria-label="Next image">→</button>
       <span id="save-state" class="save-state">Saved</span>
     </header>
     <main class="detail-content">
@@ -272,9 +292,20 @@ function getHtml(context: vscode.ExtensionContext, webview: vscode.Webview): str
         <img id="detail-image" alt="Selected image">
       </div>
       <div class="caption-pane">
-        <label for="caption">Prompt / Caption</label>
-        <textarea id="caption" spellcheck="false" placeholder="No caption yet. Start typing to create a same-name .txt file."></textarea>
-        <p class="hint">Auto-saves after typing · Ctrl/Cmd+S to save now · Esc to return</p>
+        <div class="caption-header">
+          <span class="caption-title">Prompt / Caption</span>
+          <label class="mode-control">
+            <span class="visually-hidden">Caption view</span>
+            <select id="caption-mode" aria-label="Caption view mode">
+              <option value="markdown" selected>Markdown</option>
+              <option value="raw">Raw text</option>
+              <option value="json">JSON</option>
+            </select>
+          </label>
+        </div>
+        <div id="caption-preview" class="caption-preview markdown-view" aria-live="polite"></div>
+        <textarea id="caption" class="hidden" spellcheck="false" placeholder="No caption yet. Start typing to create a same-name .txt file."></textarea>
+        <p id="caption-hint" class="hint">←/→ switch images · Select Raw text to edit · Esc returns</p>
       </div>
     </main>
   </section>

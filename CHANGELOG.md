@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.0.4
+
+- Use one concise **Image Caption Gallery** action for both folders and images.
+- Show the global gallery shortcut alongside its Explorer context-menu action.
+- Support plain Left/Right navigation when the caption editor is not focused.
+- Render captions as Markdown by default, with Raw text editing and formatted JSON views.
+
 ## 0.0.3
 
 - Add an Explorer and image-editor context action for opening the selected image.

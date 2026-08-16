@@ -2,8 +2,9 @@
 
 ## 0.0.7
 
-- Fit images to the currently available pane without cropping and recompute the fit after window or divider resizing.
-- Add persistent 25%–400% image zoom, drag-to-pan, Fit reset, double-click reset, and Ctrl/Command-wheel zooming.
+- Keep images fully contained in the available pane and recompute their fitted size after window or divider resizing.
+- Add gesture-only 25%–400% zoom, mouse-drag and two-finger pan, and double-click reset without adding header controls.
+- Replace the image-list position with right-aligned Width and Height values in stable four-character fields.
 - Open a selected image immediately while its directory is discovered in the background, and defer all Fit work until the detail image has loaded.
 - Load Gallery thumbnails only when they approach the visible viewport.
 - Ship the bilingual Marketplace README and both product screenshots inside the VSIX.

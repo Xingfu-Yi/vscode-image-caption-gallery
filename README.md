@@ -30,9 +30,10 @@ Open a folder as an adjustable thumbnail gallery, select an image, and review it
 - Read same-name `.txt` sidecar captions without modifying dataset files.
 - Render captions as Markdown by default, with Raw text and formatted JSON modes.
 - Drag the center divider to resize the Image and Text panes.
-- Fit every image to the available pane without cropping, even after resizing the window or divider.
-- Scale images from 25% to 400% relative to Fit, then drag to inspect enlarged details.
-- Reset to Fit with the toolbar button or a double-click; use `Ctrl/Command + wheel` for quick zooming.
+- Keep every image fully visible without cropping, even after resizing the window or divider.
+- Zoom from 25% to 400% with a trackpad pinch or `Ctrl/Command + wheel`.
+- Pan an enlarged image by dragging or two-finger scrolling, and double-click to restore the original fitted view.
+- Show the original resolution as right-aligned Width and Height values in stable four-character fields.
 - Scale caption text from 70% to 180%.
 - Switch images with `Left` / `Right` or the translucent image-edge controls.
 - Return to the gallery with `Escape` while preserving search and thumbnail state.
@@ -63,8 +64,9 @@ When using Remote SSH, install the extension in the remote extension host. If yo
 | --- | --- | --- |
 | Open Image Caption Gallery | `Command+Option+G` (`⌘⌥G`) | `Ctrl+Alt+G` |
 | Previous / next image | `Left` / `Right` | `Left` / `Right` |
-| Zoom image | `Command + wheel` | `Ctrl + wheel` |
-| Fit image to pane | Double-click image | Double-click image |
+| Zoom image | Trackpad pinch or `Command + wheel` | Touchpad pinch or `Ctrl + wheel` |
+| Pan enlarged image | Drag or two-finger scroll | Drag or two-finger scroll |
+| Reset image view | Double-click image | Double-click image |
 | Return to gallery | `Escape` | `Escape` |
 
 ## Dataset layout

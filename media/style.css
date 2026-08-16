@@ -246,43 +246,29 @@ button:disabled {
   white-space: nowrap;
 }
 
-.image-position {
+.image-dimensions {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
   color: var(--vscode-descriptionForeground);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
-.image-zoom-control {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-  color: var(--vscode-descriptionForeground);
-  white-space: nowrap;
+.dimension-label {
+  color: var(--vscode-foreground);
+  font-size: 0.86em;
+  opacity: 0.72;
 }
 
-.image-zoom-control input {
-  width: clamp(62px, 7vw, 112px);
+.dimension-value {
+  display: inline-block;
+  min-width: 4ch;
+  text-align: right;
 }
 
-.image-zoom-control output {
-  width: 42px;
-  font-variant-numeric: tabular-nums;
-}
-
-.fit-button {
-  height: 30px;
-  padding: 0 9px;
-  border: 1px solid var(--vscode-button-border, transparent);
-  border-radius: 5px;
-  background: var(--vscode-button-secondaryBackground);
-  cursor: pointer;
-}
-
-.fit-button:hover,
-.fit-button:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
-  background: var(--vscode-button-secondaryHoverBackground);
+.dimension-separator {
+  margin: 0 2px;
 }
 
 .detail-content {
@@ -544,18 +530,7 @@ button:disabled {
 }
 
 @container image-header (max-width: 660px) {
-  .detail-path,
-  .image-zoom-control span {
-    display: none;
-  }
-}
-
-@container image-header (max-width: 480px) {
-  .image-zoom-control input {
-    width: 62px;
-  }
-
-  .fit-button {
+  .detail-path {
     display: none;
   }
 }

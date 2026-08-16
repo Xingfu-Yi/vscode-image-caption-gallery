@@ -4,3 +4,4 @@ tsconfig.json
 .gitignore
 **/*.map
 node_modules/**
+docs/images/**

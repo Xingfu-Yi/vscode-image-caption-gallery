@@ -26,6 +26,13 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand(
       'imageCaptionGallery.open',
       async (selectedUri?: vscode.Uri) => {
+        const imageUri = resolveSelectedImage(selectedUri);
+        if (imageUri) {
+          const root = imageUri.with({ path: path.posix.dirname(imageUri.path) });
+          await openGallery(context, root, imageUri);
+          return;
+        }
+
         const root = await resolveRoot(selectedUri);
         if (!root) {
           return;
@@ -35,6 +42,27 @@ export function activate(context: vscode.ExtensionContext): void {
       },
     ),
   );
+}
+
+function resolveSelectedImage(selectedUri?: vscode.Uri): vscode.Uri | undefined {
+  if (selectedUri) {
+    return isImageUri(selectedUri) ? selectedUri : undefined;
+  }
+
+  const activeTabInput = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+  if (
+    activeTabInput instanceof vscode.TabInputText
+    || activeTabInput instanceof vscode.TabInputCustom
+  ) {
+    return isImageUri(activeTabInput.uri) ? activeTabInput.uri : undefined;
+  }
+
+  const activeEditorUri = vscode.window.activeTextEditor?.document.uri;
+  return activeEditorUri && isImageUri(activeEditorUri) ? activeEditorUri : undefined;
+}
+
+function isImageUri(uri: vscode.Uri): boolean {
+  return IMAGE_EXTENSIONS.has(path.extname(uri.path).toLowerCase());
 }
 
 async function resolveRoot(selectedUri?: vscode.Uri): Promise<vscode.Uri | undefined> {
@@ -62,6 +90,7 @@ async function resolveRoot(selectedUri?: vscode.Uri): Promise<vscode.Uri | undef
 async function openGallery(
   context: vscode.ExtensionContext,
   root: vscode.Uri,
+  initialImageUri?: vscode.Uri,
 ): Promise<void> {
   const panel = vscode.window.createWebviewPanel(
     'imageCaptionGallery.gallery',
@@ -77,6 +106,7 @@ async function openGallery(
   panel.webview.html = getHtml(context, panel.webview);
 
   let imageById = new Map<string, vscode.Uri>();
+  let pendingInitialImageId = initialImageUri?.toString();
 
   const sendImages = async (): Promise<void> => {
     await panel.webview.postMessage({ type: 'loading' });
@@ -89,7 +119,11 @@ async function openGallery(
         relativePath: relativePath(root, uri),
         source: panel.webview.asWebviewUri(uri).toString(),
       }));
-      await panel.webview.postMessage({ type: 'images', images });
+      const initialImageId = pendingInitialImageId && imageById.has(pendingInitialImageId)
+        ? pendingInitialImageId
+        : undefined;
+      pendingInitialImageId = undefined;
+      await panel.webview.postMessage({ type: 'images', images, initialImageId });
     } catch (error) {
       await panel.webview.postMessage({
         type: 'error',
@@ -99,7 +133,7 @@ async function openGallery(
   };
 
   panel.webview.onDidReceiveMessage(
-    async (message: { type?: string; id?: string; caption?: string }) => {
+    async (message: { type?: string; id?: string }) => {
       if (message.type === 'ready' || message.type === 'refresh') {
         await sendImages();
         return;
@@ -114,20 +148,15 @@ async function openGallery(
 
       if (message.type === 'loadCaption') {
         const caption = await readCaption(captionUri);
+        const renderedCaption = await renderMarkdown(caption);
         await panel.webview.postMessage({
           type: 'caption',
           id: message.id,
           caption,
+          renderedCaption,
         });
       }
 
-      if (message.type === 'saveCaption') {
-        await vscode.workspace.fs.writeFile(
-          captionUri,
-          new TextEncoder().encode(message.caption ?? ''),
-        );
-        await panel.webview.postMessage({ type: 'saved', id: message.id });
-      }
     },
     undefined,
     context.subscriptions,
@@ -169,6 +198,23 @@ async function readCaption(uri: vscode.Uri): Promise<string> {
     }
     throw error;
   }
+}
+
+async function renderMarkdown(caption: string): Promise<string> {
+  try {
+    return await vscode.commands.executeCommand<string>('markdown.api.render', caption) ?? '';
+  } catch {
+    return `<pre>${escapeHtml(caption)}</pre>`;
+  }
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
 }
 
 function sidecarUri(imageUri: vscode.Uri): vscode.Uri {
@@ -216,24 +262,43 @@ function getHtml(context: vscode.ExtensionContext, webview: vscode.Webview): str
     <div id="empty" class="empty">Loading images…</div>
   </section>
 
-  <section id="detail-view" class="detail-view hidden">
-    <header class="toolbar detail-toolbar">
-      <button id="back" class="button">← Gallery</button>
-      <span id="detail-path" class="detail-path"></span>
-      <span id="position" class="muted"></span>
-      <button id="previous" class="icon-button" title="Previous image (Alt+Left)" aria-label="Previous image">←</button>
-      <button id="next" class="icon-button" title="Next image (Alt+Right)" aria-label="Next image">→</button>
-      <span id="save-state" class="save-state">Saved</span>
+  <section id="detail-view" class="detail-view hidden" tabindex="-1">
+    <header class="detail-header">
+      <div class="image-header">
+        <button id="back" class="button">← Gallery</button>
+        <strong class="column-title">Image</strong>
+        <span id="detail-path" class="detail-path"></span>
+        <span id="position" class="image-position"></span>
+      </div>
+      <div class="header-divider" aria-hidden="true"></div>
+      <div class="text-header">
+        <strong class="column-title">Text</strong>
+        <label class="mode-control">
+          <span class="visually-hidden">Text view</span>
+          <select id="caption-mode" aria-label="Text view mode">
+            <option value="markdown" selected>Markdown</option>
+            <option value="raw">Raw text</option>
+            <option value="json">JSON</option>
+          </select>
+        </label>
+        <label class="zoom-control" title="Text size">
+          <span>Font</span>
+          <input id="text-zoom" type="range" min="70" max="180" step="10" value="100" aria-label="Text size percentage">
+          <output id="text-zoom-value">100%</output>
+        </label>
+      </div>
     </header>
     <main class="detail-content">
       <div class="image-pane">
+        <button id="previous" class="image-navigation previous" title="Previous image (Left Arrow)" aria-label="Previous image">‹</button>
         <img id="detail-image" alt="Selected image">
+        <button id="next" class="image-navigation next" title="Next image (Right Arrow)" aria-label="Next image">›</button>
+        <div class="navigation-hint">← / → 切换图片 · Switch images</div>
       </div>
-      <div class="caption-pane">
-        <label for="caption">Prompt / Caption</label>
-        <textarea id="caption" spellcheck="false" placeholder="No caption yet. Start typing to create a same-name .txt file."></textarea>
-        <p class="hint">Auto-saves after typing · Ctrl/Cmd+S to save now · Esc to return</p>
-      </div>
+      <div id="splitter" class="splitter" role="separator" aria-label="Resize image and text panes" aria-orientation="vertical" aria-valuemin="30" aria-valuemax="80" aria-valuenow="64" tabindex="0"></div>
+      <aside class="caption-pane">
+        <div id="caption-preview" class="caption-preview markdown-view" aria-live="polite"></div>
+      </aside>
     </main>
   </section>
 

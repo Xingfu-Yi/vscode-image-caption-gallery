@@ -1,8 +1,8 @@
 {
   "name": "image-caption-gallery",
   "displayName": "Image Caption Gallery",
-  "description": "Browse image folders as an adjustable gallery and edit sidecar captions without leaving VS Code.",
-  "version": "0.0.1",
+  "description": "Browse image folders as an adjustable gallery and preview sidecar captions without leaving VS Code.",
+  "version": "0.0.6",
   "publisher": "xingfu-yi",
   "license": "MIT",
   "repository": {
@@ -10,7 +10,7 @@
     "url": "https://github.com/Xingfu-Yi/vscode-image-caption-gallery.git"
   },
   "engines": {
-    "vscode": "^1.125.0"
+    "vscode": "^1.85.0"
   },
   "categories": [
     "Data Science",
@@ -26,11 +26,14 @@
   ],
   "activationEvents": [],
   "main": "./dist/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
   "contributes": {
     "commands": [
       {
         "command": "imageCaptionGallery.open",
-        "title": "Image Caption Gallery: Open Gallery",
+        "title": "Image Caption Gallery",
         "icon": "$(file-media)"
       }
     ],
@@ -38,11 +41,30 @@
       "explorer/context": [
         {
           "command": "imageCaptionGallery.open",
+          "when": "!explorerResourceIsFolder && resourceExtname =~ /\\.(avif|bmp|gif|jpe?g|png|webp)$/i",
+          "group": "navigation@19"
+        },
+        {
+          "command": "imageCaptionGallery.open",
           "when": "explorerResourceIsFolder",
           "group": "navigation@20"
         }
+      ],
+      "editor/title/context": [
+        {
+          "command": "imageCaptionGallery.open",
+          "when": "resourceExtname =~ /\\.(avif|bmp|gif|jpe?g|png|webp)$/i",
+          "group": "navigation@19"
+        }
       ]
     },
+    "keybindings": [
+      {
+        "command": "imageCaptionGallery.open",
+        "key": "ctrl+alt+g",
+        "mac": "cmd+alt+g"
+      }
+    ],
     "configuration": {
       "title": "Image Caption Gallery",
       "properties": {
@@ -63,9 +85,9 @@
     "package": "vsce package"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
-    "@types/vscode": "^1.125.0",
+    "@types/node": "18.19.130",
+    "@types/vscode": "1.85.0",
     "@vscode/vsce": "^3.9.2",
-    "typescript": "^7.0.2"
+    "typescript": "5.7.3"
   }
 }

@@ -1,24 +1,34 @@
 # Image Caption Gallery
 
-A focused VS Code extension for browsing image datasets and editing sidecar captions.
+A focused VS Code extension for browsing image datasets and previewing sidecar captions.
 
 It combines two modes in one editor tab:
 
 1. A clean, searchable image gallery with a continuously adjustable thumbnail-size slider.
-2. A detail view with the image on the left and its prompt/caption on the right.
+2. A detail view with the image on the left and its read-only text on the right.
 
 ## Features
 
-- Open a folder from the Explorer context menu or Command Palette.
+- Open a folder or image from the single **Image Caption Gallery** Explorer action.
+- See the launch shortcut directly in the Explorer context menu.
+- Launch from anywhere with `Cmd+Alt+G` on macOS or `Ctrl+Alt+G` on Windows/Linux.
 - Recursively discover `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp`, and `.avif` images.
 - Resize thumbnails from 96 px to 480 px instead of choosing a fixed column count.
 - Search by filename or relative path.
-- Click any thumbnail to open a side-by-side image/caption editor.
-- Read and write same-name `.txt` sidecar captions.
-- Create a missing `.txt` caption file on first save.
-- Navigate with toolbar buttons or `Alt+Left` / `Alt+Right`.
+- Click any thumbnail to open a side-by-side image/caption viewer.
+- Read same-name `.txt` sidecar captions without modifying dataset files.
+- Render captions as Markdown by default, with read-only Raw text and formatted JSON modes.
+- Drag the center divider to resize Image and Text panes; the split ratio is remembered.
+- Scale Text from 70% to 180%, with 100% as the default.
+- Navigate with translucent image-edge controls or plain `Left` / `Right`.
 - Return to the gallery with `Escape` while preserving the gallery state.
 - Work with local folders and VS Code Remote SSH workspaces.
+
+## Compatibility
+
+- Visual Studio Code 1.85.0 or newer.
+- Local workspaces and VS Code Remote SSH.
+- No native runtime dependencies; the packaged extension is platform-independent.
 
 ## Dataset layout
 
@@ -37,7 +47,9 @@ npm install
 npm run compile
 ```
 
-Open this repository in VS Code and press `F5`. In the Extension Development Host, open a folder containing images and run **Image Caption Gallery: Open Gallery**.
+Open this repository in VS Code and press `F5`. In the Extension Development Host, open a folder containing images and run **Image Caption Gallery**.
+
+To test the focused-image workflow, click an image in Explorer and press `Cmd+Alt+G` on macOS or `Ctrl+Alt+G` on Windows/Linux. You can also right-click either an image or a folder and choose **Image Caption Gallery**.
 
 ## Current status
 

@@ -11,20 +11,32 @@
   const detailImage = document.querySelector('#detail-image');
   const detailPath = document.querySelector('#detail-path');
   const position = document.querySelector('#position');
-  const caption = document.querySelector('#caption');
-  const saveState = document.querySelector('#save-state');
+  const captionPreview = document.querySelector('#caption-preview');
+  const captionMode = document.querySelector('#caption-mode');
+  const splitter = document.querySelector('#splitter');
+  const textZoom = document.querySelector('#text-zoom');
+  const textZoomValue = document.querySelector('#text-zoom-value');
 
   const persisted = vscode.getState() || {};
   const defaultSize = Number(document.body.dataset.defaultThumbnailSize || 220);
   let images = [];
   let filteredImages = [];
   let currentIndex = -1;
-  let saveTimer;
   let currentCaptionRequest = '';
+  let captionText = '';
+  let renderedCaption = '';
+  let splitRatio = clamp(Number(persisted.splitRatio) || 0.64, 0.3, 0.8);
+  let textZoomPercent = clamp(Number(persisted.textZoomPercent) || 100, 70, 180);
 
   sizeInput.value = String(persisted.thumbnailSize || defaultSize);
   search.value = persisted.search || '';
+  captionMode.value = ['markdown', 'raw', 'json'].includes(persisted.captionMode)
+    ? persisted.captionMode
+    : 'markdown';
+  textZoom.value = String(textZoomPercent);
   applyThumbnailSize();
+  applySplitRatio(splitRatio, false);
+  applyTextZoom();
 
   sizeInput.addEventListener('input', applyThumbnailSize);
   search.addEventListener('input', renderGallery);
@@ -34,28 +46,49 @@
   document.querySelector('#back').addEventListener('click', showGallery);
   document.querySelector('#previous').addEventListener('click', () => move(-1));
   document.querySelector('#next').addEventListener('click', () => move(1));
-
-  caption.addEventListener('input', () => {
-    saveState.textContent = 'Unsaved';
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(saveCurrentCaption, 650);
+  document.querySelector('.image-pane').addEventListener('click', () => {
+    detailView.focus({ preventScroll: true });
   });
+  captionMode.addEventListener('change', () => {
+    renderCaptionView();
+    persistState();
+  });
+  textZoom.addEventListener('input', applyTextZoom);
+  splitter.addEventListener('pointerdown', startSplitResize);
+  splitter.addEventListener('pointermove', resizeSplit);
+  splitter.addEventListener('pointerup', finishSplitResize);
+  splitter.addEventListener('pointercancel', finishSplitResize);
+  splitter.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    applySplitRatio(splitRatio + (event.key === 'ArrowLeft' ? -0.02 : 0.02));
+  });
+  window.addEventListener('resize', () => applySplitRatio(splitRatio, false));
 
   window.addEventListener('keydown', (event) => {
-    if (!detailView.classList.contains('hidden')) {
-      if (event.altKey && event.key === 'ArrowLeft') {
-        event.preventDefault();
-        move(-1);
-      } else if (event.altKey && event.key === 'ArrowRight') {
-        event.preventDefault();
-        move(1);
-      } else if (event.key === 'Escape') {
-        event.preventDefault();
-        showGallery();
-      } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-        event.preventDefault();
-        saveCurrentCaption();
-      }
+    if (detailView.classList.contains('hidden')) {
+      return;
+    }
+
+    const focusedControl = document.activeElement === captionMode
+      || document.activeElement === textZoom
+      || document.activeElement === splitter;
+    const navigationKey = !focusedControl
+      && !event.ctrlKey
+      && !event.metaKey
+      && !event.shiftKey;
+    if (navigationKey && event.key === 'ArrowLeft') {
+      event.preventDefault();
+      move(-1);
+    } else if (navigationKey && event.key === 'ArrowRight') {
+      event.preventDefault();
+      move(1);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      showGallery();
     }
   });
 
@@ -69,20 +102,20 @@
 
     if (message.type === 'images') {
       images = message.images;
+      if (message.initialImageId) {
+        search.value = '';
+      }
       renderGallery();
+      if (message.initialImageId) {
+        openDetail(message.initialImageId);
+      }
       return;
     }
 
     if (message.type === 'caption' && message.id === currentCaptionRequest) {
-      caption.value = message.caption;
-      caption.disabled = false;
-      saveState.textContent = 'Saved';
-      caption.focus();
-      return;
-    }
-
-    if (message.type === 'saved' && filteredImages[currentIndex]?.id === message.id) {
-      saveState.textContent = 'Saved';
+      captionText = message.caption;
+      renderedCaption = message.renderedCaption;
+      renderCaptionView();
       return;
     }
 
@@ -139,7 +172,9 @@
     }
     galleryView.classList.add('hidden');
     detailView.classList.remove('hidden');
+    applySplitRatio(splitRatio, false);
     loadCurrentImage();
+    detailView.focus({ preventScroll: true });
   }
 
   function loadCurrentImage() {
@@ -147,22 +182,22 @@
     if (!image) {
       return;
     }
+
     currentCaptionRequest = image.id;
+    captionText = '';
+    renderedCaption = '';
     detailImage.src = image.source;
     detailImage.alt = image.name;
     detailPath.textContent = image.relativePath;
     detailPath.title = image.relativePath;
     position.textContent = `${currentIndex + 1} / ${filteredImages.length}`;
-    caption.value = '';
-    caption.disabled = true;
-    saveState.textContent = 'Loading…';
+    captionPreview.textContent = 'Loading caption…';
     document.querySelector('#previous').disabled = currentIndex === 0;
     document.querySelector('#next').disabled = currentIndex === filteredImages.length - 1;
     vscode.postMessage({ type: 'loadCaption', id: image.id });
   }
 
   function move(offset) {
-    flushPendingSave();
     const nextIndex = Math.max(0, Math.min(filteredImages.length - 1, currentIndex + offset));
     if (nextIndex === currentIndex) {
       return;
@@ -172,33 +207,136 @@
   }
 
   function showGallery() {
-    flushPendingSave();
     detailView.classList.add('hidden');
     galleryView.classList.remove('hidden');
   }
 
-  function flushPendingSave() {
-    if (saveTimer) {
-      clearTimeout(saveTimer);
-      saveTimer = undefined;
-      saveCurrentCaption();
+  function startSplitResize(event) {
+    splitter.setPointerCapture(event.pointerId);
+    splitter.classList.add('dragging');
+    document.body.classList.add('resizing-panes');
+    updateSplitFromPointer(event, false);
+  }
+
+  function resizeSplit(event) {
+    if (!splitter.hasPointerCapture(event.pointerId)) {
+      return;
+    }
+    updateSplitFromPointer(event, false);
+  }
+
+  function finishSplitResize(event) {
+    if (splitter.hasPointerCapture(event.pointerId)) {
+      splitter.releasePointerCapture(event.pointerId);
+    }
+    splitter.classList.remove('dragging');
+    document.body.classList.remove('resizing-panes');
+    persistState();
+  }
+
+  function updateSplitFromPointer(event, shouldPersist) {
+    const bounds = detailView.getBoundingClientRect();
+    if (bounds.width <= 0) {
+      return;
+    }
+    applySplitRatio((event.clientX - bounds.left) / bounds.width, shouldPersist);
+  }
+
+  function applySplitRatio(nextRatio, shouldPersist = true) {
+    const availableWidth = detailView.clientWidth || window.innerWidth;
+    const minimumRatio = Math.max(0.3, 260 / availableWidth);
+    const maximumRatio = Math.min(0.8, Math.max(minimumRatio, (availableWidth - 287) / availableWidth));
+    splitRatio = clamp(nextRatio, minimumRatio, maximumRatio);
+    detailView.style.setProperty('--image-column', `${splitRatio * 100}%`);
+    splitter.setAttribute('aria-valuenow', String(Math.round(splitRatio * 100)));
+    if (shouldPersist) {
+      persistState();
     }
   }
 
-  function saveCurrentCaption() {
-    const image = filteredImages[currentIndex];
-    if (!image || caption.disabled) {
+  function applyTextZoom() {
+    textZoomPercent = clamp(Number(textZoom.value), 70, 180);
+    detailView.style.setProperty('--text-zoom', `${textZoomPercent}%`);
+    textZoomValue.value = `${textZoomPercent}%`;
+    persistState();
+  }
+
+  function renderCaptionView() {
+    const mode = captionMode.value;
+    captionPreview.classList.toggle('markdown-view', mode === 'markdown');
+    captionPreview.classList.toggle('raw-view', mode === 'raw');
+    captionPreview.classList.toggle('json-view', mode === 'json');
+
+    if (!captionText.trim()) {
+      captionPreview.textContent = 'No caption available.';
       return;
     }
-    saveState.textContent = 'Saving…';
-    vscode.postMessage({ type: 'saveCaption', id: image.id, caption: caption.value });
+
+    if (mode === 'raw') {
+      captionPreview.textContent = captionText;
+      return;
+    }
+
+    if (mode === 'json') {
+      renderJsonPreview();
+      return;
+    }
+
+    setSanitizedMarkdown(renderedCaption);
+  }
+
+  function renderJsonPreview() {
+    try {
+      captionPreview.textContent = JSON.stringify(JSON.parse(captionText), null, 2);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      captionPreview.textContent = `Invalid JSON: ${message}\n\n${captionText}`;
+    }
+  }
+
+  function setSanitizedMarkdown(html) {
+    const allowedTags = new Set([
+      'a', 'blockquote', 'br', 'code', 'del', 'div', 'em', 'h1', 'h2', 'h3', 'h4', 'h5',
+      'h6', 'hr', 'li', 'ol', 'p', 'pre', 's', 'span', 'strong', 'table', 'tbody', 'td', 'th',
+      'thead', 'tr', 'ul',
+    ]);
+    const template = document.createElement('template');
+    template.innerHTML = html;
+
+    for (const element of [...template.content.querySelectorAll('*')]) {
+      const tag = element.tagName.toLocaleLowerCase();
+      if (!allowedTags.has(tag)) {
+        element.replaceWith(document.createTextNode(element.textContent || ''));
+        continue;
+      }
+
+      const href = tag === 'a' ? element.getAttribute('href') || '' : '';
+      for (const attribute of [...element.attributes]) {
+        element.removeAttribute(attribute.name);
+      }
+
+      if (tag === 'a' && /^(https?:|mailto:)/i.test(href)) {
+        element.setAttribute('href', href);
+        element.setAttribute('target', '_blank');
+        element.setAttribute('rel', 'noreferrer noopener');
+      }
+    }
+
+    captionPreview.replaceChildren(template.content);
   }
 
   function persistState() {
     vscode.setState({
       thumbnailSize: Number(sizeInput.value),
       search: search.value,
+      captionMode: captionMode.value,
+      splitRatio,
+      textZoomPercent,
     });
+  }
+
+  function clamp(value, minimum, maximum) {
+    return Math.min(maximum, Math.max(minimum, value));
   }
 
   vscode.postMessage({ type: 'ready' });

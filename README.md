@@ -20,6 +20,12 @@ It combines two modes in one editor tab:
 - Return to the gallery with `Escape` while preserving the gallery state.
 - Work with local folders and VS Code Remote SSH workspaces.
 
+## Compatibility
+
+- Visual Studio Code 1.85.0 or newer.
+- Local workspaces and VS Code Remote SSH.
+- No native runtime dependencies; the packaged extension is platform-independent.
+
 ## Dataset layout
 
 ```text

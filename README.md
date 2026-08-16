@@ -37,13 +37,13 @@ Open a folder as an adjustable thumbnail gallery, select an image, and review it
 
 ## Install
 
-Download the latest `.vsix` from [GitHub Releases](https://github.com/Xingfu-Yi/vscode-image-caption-gallery/releases), then run:
+Install directly from the VS Code Marketplace:
 
 ```bash
-code --install-extension image-caption-gallery-0.0.6.vsix --force
+code --install-extension xingfu-yi.image-caption-gallery --force
 ```
 
-You can also run **Extensions: Install from VSIX...** from the VS Code Command Palette.
+You can also download the latest `.vsix` from [GitHub Releases](https://github.com/Xingfu-Yi/vscode-image-caption-gallery/releases) and run **Extensions: Install from VSIX...** from the VS Code Command Palette.
 
 When using Remote SSH, install the extension in the remote extension host. If you run the command in a remote terminal, copy the `.vsix` to the remote machine first and use its remote path.
 

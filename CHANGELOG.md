@@ -7,7 +7,7 @@
 - Replace the image-list position with right-aligned `width × height` values in stable four-character fields.
 - Open a selected image immediately while its directory is discovered in the background, and defer all Fit work until the detail image has loaded.
 - Load Gallery thumbnails only when they approach the visible viewport.
-- Ship the bilingual Marketplace README and both product screenshots inside the VSIX.
+- Ship the bilingual Marketplace README and three updated product screenshots inside the VSIX.
 - Show the macOS launcher as `Command+Option+G` (`⌘⌥G`) in user-facing documentation.
 - Use the Marketplace extension identifier in installation instructions so they stay current across releases.
 

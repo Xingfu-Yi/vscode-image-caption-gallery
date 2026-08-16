@@ -1,36 +1,70 @@
 # Image Caption Gallery
 
-A focused VS Code extension for browsing image datasets and previewing sidecar captions.
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-It combines two modes in one editor tab:
+A fast, local-first VS Code extension for browsing image datasets and reading sidecar captions without leaving the editor.
 
-1. A clean, searchable image gallery with a continuously adjustable thumbnail-size slider.
-2. A detail view with the image on the left and its read-only text on the right.
+Open a folder as an adjustable thumbnail gallery, select an image, and review its matching `.txt` caption beside it. Captions are read-only and can be rendered as Markdown, raw text, or formatted JSON.
+
+## Preview
+
+### Image and Markdown caption
+
+<p align="center">
+  <img src="docs/images/gallery-detail-en.png" alt="Image Caption Gallery showing an image beside an English Markdown caption" width="100%">
+</p>
+
+### Multilingual captions
+
+<p align="center">
+  <img src="docs/images/gallery-detail-zh.png" alt="Image Caption Gallery showing an image beside a Chinese Markdown caption" width="100%">
+</p>
 
 ## Features
 
-- Open a folder or image from the single **Image Caption Gallery** Explorer action.
-- See the launch shortcut directly in the Explorer context menu.
-- Launch from anywhere with `Cmd+Alt+G` on macOS or `Ctrl+Alt+G` on Windows/Linux.
-- Recursively discover `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp`, and `.avif` images.
-- Resize thumbnails from 96 px to 480 px instead of choosing a fixed column count.
-- Search by filename or relative path.
-- Click any thumbnail to open a side-by-side image/caption viewer.
+- Open a folder or selected image from the Explorer context menu.
+- Launch instantly with `Cmd+Alt+G` on macOS or `Ctrl+Alt+G` on Windows/Linux.
+- Recursively discover `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp`, and `.avif` files.
+- Resize gallery thumbnails continuously from 96 px to 480 px.
+- Search images by filename or relative path.
 - Read same-name `.txt` sidecar captions without modifying dataset files.
-- Render captions as Markdown by default, with read-only Raw text and formatted JSON modes.
-- Drag the center divider to resize Image and Text panes; the split ratio is remembered.
-- Scale Text from 70% to 180%, with 100% as the default.
-- Navigate with translucent image-edge controls or plain `Left` / `Right`.
-- Return to the gallery with `Escape` while preserving the gallery state.
+- Render captions as Markdown by default, with Raw text and formatted JSON modes.
+- Drag the center divider to resize the Image and Text panes.
+- Scale caption text from 70% to 180%.
+- Switch images with `Left` / `Right` or the translucent image-edge controls.
+- Return to the gallery with `Escape` while preserving search and thumbnail state.
 - Work with local folders and VS Code Remote SSH workspaces.
 
-## Compatibility
+## Install
 
-- Visual Studio Code 1.85.0 or newer.
-- Local workspaces and VS Code Remote SSH.
-- No native runtime dependencies; the packaged extension is platform-independent.
+Download the latest `.vsix` from [GitHub Releases](https://github.com/Xingfu-Yi/vscode-image-caption-gallery/releases), then run:
+
+```bash
+code --install-extension image-caption-gallery-0.0.6.vsix --force
+```
+
+You can also run **Extensions: Install from VSIX...** from the VS Code Command Palette.
+
+When using Remote SSH, install the extension in the remote extension host. If you run the command in a remote terminal, copy the `.vsix` to the remote machine first and use its remote path.
+
+## Usage
+
+1. Open a folder that contains images and matching caption files.
+2. Right-click an image or folder in Explorer and select **Image Caption Gallery**. You can also select an image and press the launch shortcut.
+3. Adjust the thumbnail size or search the gallery.
+4. Select an image to open the side-by-side Image and Text view.
+
+### Shortcuts
+
+| Action | macOS | Windows / Linux |
+| --- | --- | --- |
+| Open Image Caption Gallery | `Cmd+Alt+G` | `Ctrl+Alt+G` |
+| Previous / next image | `Left` / `Right` | `Left` / `Right` |
+| Return to gallery | `Escape` | `Escape` |
 
 ## Dataset layout
+
+The caption file must use the same base name as the image:
 
 ```text
 dataset/
@@ -40,20 +74,31 @@ dataset/
 └── image-002.txt
 ```
 
-## Run locally
+## Compatibility
+
+- Visual Studio Code 1.85.0 or newer.
+- Local workspaces and VS Code Remote SSH.
+- Platform-independent package with no native runtime dependencies.
+
+## Privacy
+
+Image Caption Gallery reads images and captions directly from the current workspace. It does not upload dataset files and does not include telemetry.
+
+## Development
 
 ```bash
 npm install
 npm run compile
 ```
 
-Open this repository in VS Code and press `F5`. In the Extension Development Host, open a folder containing images and run **Image Caption Gallery**.
+Open the repository in VS Code and press `F5` to launch an Extension Development Host.
 
-To test the focused-image workflow, click an image in Explorer and press `Cmd+Alt+G` on macOS or `Ctrl+Alt+G` on Windows/Linux. You can also right-click either an image or a folder and choose **Image Caption Gallery**.
+## Roadmap
 
-## Current status
-
-This repository starts with a functional MVP. Planned improvements include virtualized rendering for very large datasets, configurable caption formats, richer sorting/filtering, image metadata, and packaged releases.
+- Virtualized rendering for very large datasets.
+- More configurable caption and metadata formats.
+- Richer sorting and filtering.
+- Image metadata and dataset-quality tools.
 
 ## Contributing
 

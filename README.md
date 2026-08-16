@@ -23,7 +23,7 @@ Open a folder as an adjustable thumbnail gallery, select an image, and review it
 ## Features
 
 - Open a folder or selected image from the Explorer context menu.
-- Launch instantly with `Cmd+Alt+G` on macOS or `Ctrl+Alt+G` on Windows/Linux.
+- Launch instantly with `Command+Option+G` (`⌘⌥G`) on macOS or `Ctrl+Alt+G` on Windows/Linux.
 - Recursively discover `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp`, and `.avif` files.
 - Resize gallery thumbnails continuously from 96 px to 480 px.
 - Search images by filename or relative path.
@@ -58,7 +58,7 @@ When using Remote SSH, install the extension in the remote extension host. If yo
 
 | Action | macOS | Windows / Linux |
 | --- | --- | --- |
-| Open Image Caption Gallery | `Cmd+Alt+G` | `Ctrl+Alt+G` |
+| Open Image Caption Gallery | `Command+Option+G` (`⌘⌥G`) | `Ctrl+Alt+G` |
 | Previous / next image | `Left` / `Right` | `Left` / `Right` |
 | Return to gallery | `Escape` | `Escape` |
 

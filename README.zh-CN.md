@@ -23,7 +23,7 @@
 ## 主要功能
 
 - 从 VS Code 资源管理器右键打开图片目录或当前选中的图片。
-- macOS 使用 `Cmd+Alt+G`，Windows/Linux 使用 `Ctrl+Alt+G` 快速启动。
+- macOS 使用 `Command+Option+G`（`⌘⌥G`），Windows/Linux 使用 `Ctrl+Alt+G` 快速启动。
 - 递归发现 `.jpg`、`.jpeg`、`.png`、`.webp`、`.gif`、`.bmp` 和 `.avif` 图片。
 - 将 Gallery 缩略图大小从 96 px 连续调整到 480 px。
 - 按文件名或相对路径搜索图片。
@@ -58,7 +58,7 @@ code --install-extension image-caption-gallery-0.0.6.vsix --force
 
 | 操作 | macOS | Windows / Linux |
 | --- | --- | --- |
-| 打开 Image Caption Gallery | `Cmd+Alt+G` | `Ctrl+Alt+G` |
+| 打开 Image Caption Gallery | `Command+Option+G`（`⌘⌥G`） | `Ctrl+Alt+G` |
 | 上一张 / 下一张图片 | `←` / `→` | `←` / `→` |
 | 返回 Gallery | `Escape` | `Escape` |
 

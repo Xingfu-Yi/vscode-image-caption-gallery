@@ -24,7 +24,7 @@
 ## 0.0.3
 
 - Add an Explorer and image-editor context action for opening the selected image.
-- Add `Cmd+Alt+G` on macOS and `Ctrl+Alt+G` on Windows/Linux as the default launcher shortcut.
+- Add `Command+Option+G` (`⌘⌥G`) on macOS and `Ctrl+Alt+G` on Windows/Linux as the default launcher shortcut.
 - Open the selected image's folder and jump directly into its caption detail view.
 
 ## 0.0.2

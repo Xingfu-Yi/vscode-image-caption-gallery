@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.7
+
+- Ship the bilingual Marketplace README and both product screenshots inside the VSIX.
+- Show the macOS launcher as `Command+Option+G` (`⌘⌥G`) in user-facing documentation.
+- Use the Marketplace extension identifier in installation instructions so they stay current across releases.
+
 ## 0.0.6
 
 - Add a unified, column-aligned header with Image metadata on the left and Text controls on the right.

@@ -37,13 +37,13 @@
 
 ## 安装
 
-从 [GitHub Releases](https://github.com/Xingfu-Yi/vscode-image-caption-gallery/releases) 下载最新的 `.vsix` 文件，然后运行：
+直接从 VS Code Marketplace 安装：
 
 ```bash
-code --install-extension image-caption-gallery-0.0.6.vsix --force
+code --install-extension xingfu-yi.image-caption-gallery --force
 ```
 
-也可以在 VS Code 命令面板中运行 **Extensions: Install from VSIX...**。
+也可以从 [GitHub Releases](https://github.com/Xingfu-Yi/vscode-image-caption-gallery/releases) 下载最新的 `.vsix` 文件，然后在 VS Code 命令面板中运行 **Extensions: Install from VSIX...**。
 
 使用 Remote SSH 时，需要把插件安装到远程扩展主机。如果在远程终端运行安装命令，请先把 `.vsix` 复制到服务器，并使用服务器上的文件路径。
 

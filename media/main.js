@@ -69,7 +69,13 @@
 
     if (message.type === 'images') {
       images = message.images;
+      if (message.initialImageId) {
+        search.value = '';
+      }
       renderGallery();
+      if (message.initialImageId) {
+        openDetail(message.initialImageId);
+      }
       return;
     }
 

@@ -10,6 +10,8 @@ It combines two modes in one editor tab:
 ## Features
 
 - Open a folder from the Explorer context menu or Command Palette.
+- Right-click an image to open its folder and jump directly to that image.
+- With an image selected or open, launch immediately with `Cmd+Alt+G` on macOS or `Ctrl+Alt+G` on Windows/Linux.
 - Recursively discover `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp`, and `.avif` images.
 - Resize thumbnails from 96 px to 480 px instead of choosing a fixed column count.
 - Search by filename or relative path.
@@ -44,6 +46,8 @@ npm run compile
 ```
 
 Open this repository in VS Code and press `F5`. In the Extension Development Host, open a folder containing images and run **Image Caption Gallery: Open Gallery**.
+
+To test the focused-image workflow, click an image in Explorer and press `Cmd+Alt+G` on macOS or `Ctrl+Alt+G` on Windows/Linux. You can also right-click the image and choose **Image Caption Gallery: Open Selected Image**.
 
 ## Current status
 

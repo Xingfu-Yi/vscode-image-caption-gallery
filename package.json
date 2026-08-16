@@ -2,7 +2,7 @@
   "name": "image-caption-gallery",
   "displayName": "Image Caption Gallery",
   "description": "Browse image folders as an adjustable gallery and edit sidecar captions without leaving VS Code.",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "xingfu-yi",
   "license": "MIT",
   "repository": {
@@ -35,17 +35,42 @@
         "command": "imageCaptionGallery.open",
         "title": "Image Caption Gallery: Open Gallery",
         "icon": "$(file-media)"
+      },
+      {
+        "command": "imageCaptionGallery.openSelected",
+        "title": "Image Caption Gallery: Open Selected Image",
+        "icon": "$(preview)"
       }
     ],
     "menus": {
       "explorer/context": [
         {
+          "command": "imageCaptionGallery.openSelected",
+          "when": "!explorerResourceIsFolder && resourceExtname =~ /\\.(avif|bmp|gif|jpe?g|png|webp)$/i",
+          "group": "navigation@19"
+        },
+        {
           "command": "imageCaptionGallery.open",
           "when": "explorerResourceIsFolder",
           "group": "navigation@20"
         }
+      ],
+      "editor/title/context": [
+        {
+          "command": "imageCaptionGallery.openSelected",
+          "when": "resourceExtname =~ /\\.(avif|bmp|gif|jpe?g|png|webp)$/i",
+          "group": "navigation@19"
+        }
       ]
     },
+    "keybindings": [
+      {
+        "command": "imageCaptionGallery.openSelected",
+        "key": "ctrl+alt+g",
+        "mac": "cmd+alt+g",
+        "when": "resourceExtname =~ /\\.(avif|bmp|gif|jpe?g|png|webp)$/i"
+      }
+    ],
     "configuration": {
       "title": "Image Caption Gallery",
       "properties": {

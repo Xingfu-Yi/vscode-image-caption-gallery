@@ -34,7 +34,43 @@ export function activate(context: vscode.ExtensionContext): void {
         await openGallery(context, root);
       },
     ),
+    vscode.commands.registerCommand(
+      'imageCaptionGallery.openSelected',
+      async (selectedUri?: vscode.Uri) => {
+        const imageUri = resolveSelectedImage(selectedUri);
+        if (!imageUri) {
+          await vscode.window.showWarningMessage(
+            'Select or open a supported image, then run Image Caption Gallery again.',
+          );
+          return;
+        }
+
+        const root = imageUri.with({ path: path.posix.dirname(imageUri.path) });
+        await openGallery(context, root, imageUri);
+      },
+    ),
   );
+}
+
+function resolveSelectedImage(selectedUri?: vscode.Uri): vscode.Uri | undefined {
+  if (selectedUri && isImageUri(selectedUri)) {
+    return selectedUri;
+  }
+
+  const activeTabInput = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+  if (
+    activeTabInput instanceof vscode.TabInputText
+    || activeTabInput instanceof vscode.TabInputCustom
+  ) {
+    return isImageUri(activeTabInput.uri) ? activeTabInput.uri : undefined;
+  }
+
+  const activeEditorUri = vscode.window.activeTextEditor?.document.uri;
+  return activeEditorUri && isImageUri(activeEditorUri) ? activeEditorUri : undefined;
+}
+
+function isImageUri(uri: vscode.Uri): boolean {
+  return IMAGE_EXTENSIONS.has(path.extname(uri.path).toLowerCase());
 }
 
 async function resolveRoot(selectedUri?: vscode.Uri): Promise<vscode.Uri | undefined> {
@@ -62,6 +98,7 @@ async function resolveRoot(selectedUri?: vscode.Uri): Promise<vscode.Uri | undef
 async function openGallery(
   context: vscode.ExtensionContext,
   root: vscode.Uri,
+  initialImageUri?: vscode.Uri,
 ): Promise<void> {
   const panel = vscode.window.createWebviewPanel(
     'imageCaptionGallery.gallery',
@@ -77,6 +114,7 @@ async function openGallery(
   panel.webview.html = getHtml(context, panel.webview);
 
   let imageById = new Map<string, vscode.Uri>();
+  let pendingInitialImageId = initialImageUri?.toString();
 
   const sendImages = async (): Promise<void> => {
     await panel.webview.postMessage({ type: 'loading' });
@@ -89,7 +127,11 @@ async function openGallery(
         relativePath: relativePath(root, uri),
         source: panel.webview.asWebviewUri(uri).toString(),
       }));
-      await panel.webview.postMessage({ type: 'images', images });
+      const initialImageId = pendingInitialImageId && imageById.has(pendingInitialImageId)
+        ? pendingInitialImageId
+        : undefined;
+      pendingInitialImageId = undefined;
+      await panel.webview.postMessage({ type: 'images', images, initialImageId });
     } catch (error) {
       await panel.webview.postMessage({
         type: 'error',

@@ -33,7 +33,7 @@ Open a folder as an adjustable thumbnail gallery, select an image, and review it
 - Keep every image fully visible without cropping, even after resizing the window or divider.
 - Zoom from 25% to 400% with a trackpad pinch or `Ctrl/Command + wheel`.
 - Pan an enlarged image by dragging or two-finger scrolling, and double-click to restore the original fitted view.
-- Show the original resolution as right-aligned Width and Height values in stable four-character fields.
+- Show the original `width × height` resolution as right-aligned values in stable four-character fields.
 - Scale caption text from 70% to 180%.
 - Switch images with `Left` / `Right` or the translucent image-edge controls.
 - Return to the gallery with `Escape` while preserving search and thumbnail state.

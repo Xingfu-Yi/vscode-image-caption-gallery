@@ -255,12 +255,6 @@ button:disabled {
   font-variant-numeric: tabular-nums;
 }
 
-.dimension-label {
-  color: var(--vscode-foreground);
-  font-size: 0.86em;
-  opacity: 0.72;
-}
-
 .dimension-value {
   display: inline-block;
   min-width: 4ch;

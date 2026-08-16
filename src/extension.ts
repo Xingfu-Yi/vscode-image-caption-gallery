@@ -284,10 +284,10 @@ function getHtml(context: vscode.ExtensionContext, webview: vscode.Webview): str
         <button id="back" class="button">← Gallery</button>
         <strong class="column-title">Image</strong>
         <span id="detail-path" class="detail-path"></span>
-        <span class="image-dimensions" title="Original image dimensions">
-          <span class="dimension-label">W</span><span id="image-width" class="dimension-value">—</span>
+        <span class="image-dimensions" title="Original image dimensions (width × height)" aria-label="Original image dimensions: width by height">
+          <span id="image-width" class="dimension-value">—</span>
           <span class="dimension-separator">×</span>
-          <span class="dimension-label">H</span><span id="image-height" class="dimension-value">—</span>
+          <span id="image-height" class="dimension-value">—</span>
         </span>
       </div>
       <div class="header-divider" aria-hidden="true"></div>

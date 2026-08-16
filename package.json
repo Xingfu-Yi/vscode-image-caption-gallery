@@ -1,0 +1,71 @@
+{
+  "name": "image-caption-gallery",
+  "displayName": "Image Caption Gallery",
+  "description": "Browse image folders as an adjustable gallery and edit sidecar captions without leaving VS Code.",
+  "version": "0.0.1",
+  "publisher": "xingfu-yi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Xingfu-Yi/vscode-image-caption-gallery.git"
+  },
+  "engines": {
+    "vscode": "^1.125.0"
+  },
+  "categories": [
+    "Data Science",
+    "Visualization"
+  ],
+  "keywords": [
+    "image",
+    "gallery",
+    "caption",
+    "dataset",
+    "stable-diffusion",
+    "lora"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "imageCaptionGallery.open",
+        "title": "Image Caption Gallery: Open Gallery",
+        "icon": "$(file-media)"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "imageCaptionGallery.open",
+          "when": "explorerResourceIsFolder",
+          "group": "navigation@20"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Image Caption Gallery",
+      "properties": {
+        "imageCaptionGallery.defaultThumbnailSize": {
+          "type": "number",
+          "default": 220,
+          "minimum": 96,
+          "maximum": 480,
+          "description": "Default thumbnail width in pixels. It can also be changed from the gallery toolbar."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/vscode": "^1.125.0",
+    "@vscode/vsce": "^3.9.2",
+    "typescript": "^7.0.2"
+  }
+}

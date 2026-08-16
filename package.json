@@ -2,8 +2,9 @@
   "name": "image-caption-gallery",
   "displayName": "Image Caption Gallery",
   "description": "Browse image folders as an adjustable gallery and preview sidecar captions without leaving VS Code.",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "publisher": "xingfu-yi",
+  "icon": "icon.png",
   "license": "MIT",
   "repository": {
     "type": "git",

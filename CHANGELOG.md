@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.9
+
+- Replace the generic extension icon with a distinctive Image, Text, and adjustable-divider brand mark.
+- Preserve the high-resolution transparent source artwork while shipping an optimized 256 × 256 PNG in the VSIX.
+
 ## 0.0.8
 
 - Restore all three GitHub and Marketplace preview images with shared, stable GitHub raw HTTPS URLs.

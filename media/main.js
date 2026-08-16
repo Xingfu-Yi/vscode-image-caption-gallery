@@ -34,7 +34,11 @@
   let imagePanX = 0;
   let imagePanY = 0;
   let imagePanGesture = null;
+  let imageResizeObserver = null;
   let textZoomPercent = clamp(Number(persisted.textZoomPercent) || 100, 70, 180);
+  const thumbnailObserver = 'IntersectionObserver' in window
+    ? new IntersectionObserver(loadVisibleThumbnails, { rootMargin: '600px 0px' })
+    : null;
 
   sizeInput.value = String(persisted.thumbnailSize || defaultSize);
   search.value = persisted.search || '';
@@ -42,10 +46,10 @@
     ? persisted.captionMode
     : 'markdown';
   imageZoom.value = String(imageZoomPercent);
+  imageZoomValue.value = `${imageZoomPercent}%`;
   textZoom.value = String(textZoomPercent);
   applyThumbnailSize();
   applySplitRatio(splitRatio, false);
-  applyImageZoom(imageZoomPercent, false);
   applyTextZoom();
 
   sizeInput.addEventListener('input', applyThumbnailSize);
@@ -64,6 +68,7 @@
   detailImage.addEventListener('load', () => {
     imagePanX = 0;
     imagePanY = 0;
+    detailImage.classList.remove('loading');
     updateImageTransform();
   });
   imageStage.addEventListener('pointerdown', startImagePan);
@@ -91,9 +96,10 @@
   });
   window.addEventListener('resize', () => {
     applySplitRatio(splitRatio, false);
-    requestAnimationFrame(updateImageTransform);
+    if (!detailView.classList.contains('hidden')) {
+      requestAnimationFrame(updateImageTransform);
+    }
   });
-  new ResizeObserver(updateImageTransform).observe(imageStage);
 
   window.addEventListener('keydown', (event) => {
     if (detailView.classList.contains('hidden')) {
@@ -129,14 +135,29 @@
     }
 
     if (message.type === 'images') {
+      const activeImageId = detailView.classList.contains('hidden') ? '' : currentCaptionRequest;
       images = message.images;
       if (message.initialImageId) {
         search.value = '';
       }
       renderGallery();
-      if (message.initialImageId) {
+      const activeIndex = activeImageId
+        ? filteredImages.findIndex((image) => image.id === activeImageId)
+        : -1;
+      if (activeIndex >= 0) {
+        currentIndex = activeIndex;
+        updateDetailMetadata();
+      } else if (message.initialImageId) {
         openDetail(message.initialImageId);
       }
+      return;
+    }
+
+    if (message.type === 'initialImage') {
+      images = [message.image];
+      search.value = '';
+      renderGallery();
+      openDetail(message.image.id);
       return;
     }
 
@@ -163,6 +184,7 @@
   function renderGallery() {
     const query = search.value.trim().toLocaleLowerCase();
     filteredImages = images.filter((image) => image.relativePath.toLocaleLowerCase().includes(query));
+    thumbnailObserver?.disconnect();
     gallery.replaceChildren();
 
     const fragment = document.createDocumentFragment();
@@ -174,9 +196,14 @@
       card.addEventListener('click', () => openDetail(image.id));
 
       const thumbnail = document.createElement('img');
-      thumbnail.src = image.source;
       thumbnail.alt = image.name;
       thumbnail.loading = 'lazy';
+      if (thumbnailObserver) {
+        thumbnail.dataset.source = image.source;
+        thumbnailObserver.observe(thumbnail);
+      } else {
+        thumbnail.src = image.source;
+      }
 
       const filename = document.createElement('span');
       filename.className = 'filename';
@@ -200,9 +227,12 @@
     }
     galleryView.classList.add('hidden');
     detailView.classList.remove('hidden');
+    if (!imageResizeObserver) {
+      imageResizeObserver = new ResizeObserver(updateImageTransform);
+    }
+    imageResizeObserver.observe(imageStage);
     applySplitRatio(splitRatio, false);
     loadCurrentImage();
-    requestAnimationFrame(updateImageTransform);
     detailView.focus({ preventScroll: true });
   }
 
@@ -217,16 +247,14 @@
     renderedCaption = '';
     imagePanX = 0;
     imagePanY = 0;
+    detailImage.classList.add('loading');
     detailImage.src = image.source;
     detailImage.alt = image.name;
-    detailPath.textContent = image.relativePath;
-    detailPath.title = image.relativePath;
-    position.textContent = `${currentIndex + 1} / ${filteredImages.length}`;
     captionPreview.textContent = 'Loading caption…';
-    document.querySelector('#previous').disabled = currentIndex === 0;
-    document.querySelector('#next').disabled = currentIndex === filteredImages.length - 1;
+    updateDetailMetadata();
     vscode.postMessage({ type: 'loadCaption', id: image.id });
     if (detailImage.complete && detailImage.naturalWidth > 0) {
+      detailImage.classList.remove('loading');
       requestAnimationFrame(updateImageTransform);
     }
   }
@@ -241,8 +269,36 @@
   }
 
   function showGallery() {
+    imageResizeObserver?.disconnect();
     detailView.classList.add('hidden');
     galleryView.classList.remove('hidden');
+  }
+
+  function updateDetailMetadata() {
+    const image = filteredImages[currentIndex];
+    if (!image) {
+      return;
+    }
+    detailPath.textContent = image.relativePath;
+    detailPath.title = image.relativePath;
+    position.textContent = `${currentIndex + 1} / ${filteredImages.length}`;
+    document.querySelector('#previous').disabled = currentIndex === 0;
+    document.querySelector('#next').disabled = currentIndex === filteredImages.length - 1;
+  }
+
+  function loadVisibleThumbnails(entries, observer) {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) {
+        continue;
+      }
+      const thumbnail = entry.target;
+      const source = thumbnail.dataset.source;
+      if (source) {
+        thumbnail.src = source;
+        delete thumbnail.dataset.source;
+      }
+      observer.unobserve(thumbnail);
+    }
   }
 
   function startSplitResize(event) {
@@ -286,7 +342,9 @@
     if (shouldPersist) {
       persistState();
     }
-    requestAnimationFrame(updateImageTransform);
+    if (!detailView.classList.contains('hidden')) {
+      requestAnimationFrame(updateImageTransform);
+    }
   }
 
   function applyImageZoom(nextPercent, shouldPersist = true) {
@@ -318,7 +376,11 @@
   }
 
   function updateImageTransform() {
-    if (!detailImage.naturalWidth || !detailImage.naturalHeight) {
+    if (
+      detailView.classList.contains('hidden')
+      || !detailImage.naturalWidth
+      || !detailImage.naturalHeight
+    ) {
       return;
     }
 

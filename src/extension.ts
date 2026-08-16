@@ -111,14 +111,17 @@ async function openGallery(
   const sendImages = async (): Promise<void> => {
     await panel.webview.postMessage({ type: 'loading' });
     try {
+      if (pendingInitialImageId && initialImageUri) {
+        imageById.set(pendingInitialImageId, initialImageUri);
+        await panel.webview.postMessage({
+          type: 'initialImage',
+          image: toImageRecord(root, initialImageUri, panel.webview),
+        });
+      }
+
       const imageUris = await scanImages(root);
       imageById = new Map(imageUris.map((uri) => [uri.toString(), uri]));
-      const images: ImageRecord[] = imageUris.map((uri) => ({
-        id: uri.toString(),
-        name: path.posix.basename(uri.path),
-        relativePath: relativePath(root, uri),
-        source: panel.webview.asWebviewUri(uri).toString(),
-      }));
+      const images = imageUris.map((uri) => toImageRecord(root, uri, panel.webview));
       const initialImageId = pendingInitialImageId && imageById.has(pendingInitialImageId)
         ? pendingInitialImageId
         : undefined;
@@ -161,6 +164,19 @@ async function openGallery(
     undefined,
     context.subscriptions,
   );
+}
+
+function toImageRecord(
+  root: vscode.Uri,
+  uri: vscode.Uri,
+  webview: vscode.Webview,
+): ImageRecord {
+  return {
+    id: uri.toString(),
+    name: path.posix.basename(uri.path),
+    relativePath: relativePath(root, uri),
+    source: webview.asWebviewUri(uri).toString(),
+  };
 }
 
 async function scanImages(root: vscode.Uri): Promise<vscode.Uri[]> {

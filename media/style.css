@@ -329,6 +329,10 @@ button:disabled {
   will-change: transform;
 }
 
+.image-stage img.loading {
+  visibility: hidden;
+}
+
 .image-navigation {
   position: absolute;
   z-index: 2;

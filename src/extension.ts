@@ -133,7 +133,7 @@ async function openGallery(
   };
 
   panel.webview.onDidReceiveMessage(
-    async (message: { type?: string; id?: string; caption?: string }) => {
+    async (message: { type?: string; id?: string }) => {
       if (message.type === 'ready' || message.type === 'refresh') {
         await sendImages();
         return;
@@ -157,22 +157,6 @@ async function openGallery(
         });
       }
 
-      if (message.type === 'renderCaption') {
-        const renderedCaption = await renderMarkdown(message.caption ?? '');
-        await panel.webview.postMessage({
-          type: 'renderedCaption',
-          id: message.id,
-          renderedCaption,
-        });
-      }
-
-      if (message.type === 'saveCaption') {
-        await vscode.workspace.fs.writeFile(
-          captionUri,
-          new TextEncoder().encode(message.caption ?? ''),
-        );
-        await panel.webview.postMessage({ type: 'saved', id: message.id });
-      }
     },
     undefined,
     context.subscriptions,
@@ -279,19 +263,19 @@ function getHtml(context: vscode.ExtensionContext, webview: vscode.Webview): str
   </section>
 
   <section id="detail-view" class="detail-view hidden" tabindex="-1">
-    <header class="toolbar detail-toolbar">
-      <button id="back" class="button">← Gallery</button>
-      <span id="detail-path" class="detail-path"></span>
-      <span id="position" class="muted"></span>
-      <button id="previous" class="icon-button" title="Previous image (Left Arrow)" aria-label="Previous image">←</button>
-      <button id="next" class="icon-button" title="Next image (Right Arrow)" aria-label="Next image">→</button>
-      <span id="save-state" class="save-state">Saved</span>
-    </header>
     <main class="detail-content">
       <div class="image-pane">
+        <header class="image-toolbar">
+          <button id="back" class="button">← Gallery</button>
+          <span id="position" class="image-position"></span>
+          <span id="detail-path" class="detail-path"></span>
+        </header>
+        <button id="previous" class="image-navigation previous" title="Previous image (Left Arrow)" aria-label="Previous image">‹</button>
         <img id="detail-image" alt="Selected image">
+        <button id="next" class="image-navigation next" title="Next image (Right Arrow)" aria-label="Next image">›</button>
+        <div class="navigation-hint">← / → 切换图片 · Switch images</div>
       </div>
-      <div class="caption-pane">
+      <aside class="caption-pane">
         <div class="caption-header">
           <span class="caption-title">Prompt / Caption</span>
           <label class="mode-control">
@@ -304,9 +288,7 @@ function getHtml(context: vscode.ExtensionContext, webview: vscode.Webview): str
           </label>
         </div>
         <div id="caption-preview" class="caption-preview markdown-view" aria-live="polite"></div>
-        <textarea id="caption" class="hidden" spellcheck="false" placeholder="No caption yet. Start typing to create a same-name .txt file."></textarea>
-        <p id="caption-hint" class="hint">←/→ switch images · Select Raw text to edit · Esc returns</p>
-      </div>
+      </aside>
     </main>
   </section>
 

@@ -11,21 +11,17 @@
   const detailImage = document.querySelector('#detail-image');
   const detailPath = document.querySelector('#detail-path');
   const position = document.querySelector('#position');
-  const caption = document.querySelector('#caption');
   const captionPreview = document.querySelector('#caption-preview');
   const captionMode = document.querySelector('#caption-mode');
-  const captionHint = document.querySelector('#caption-hint');
-  const saveState = document.querySelector('#save-state');
 
   const persisted = vscode.getState() || {};
   const defaultSize = Number(document.body.dataset.defaultThumbnailSize || 220);
   let images = [];
   let filteredImages = [];
   let currentIndex = -1;
-  let saveTimer;
   let currentCaptionRequest = '';
+  let captionText = '';
   let renderedCaption = '';
-  let renderPending = false;
 
   sizeInput.value = String(persisted.thumbnailSize || defaultSize);
   search.value = persisted.search || '';
@@ -45,38 +41,26 @@
   document.querySelector('.image-pane').addEventListener('click', () => {
     detailView.focus({ preventScroll: true });
   });
-  captionMode.addEventListener('change', changeCaptionMode);
-
-  caption.addEventListener('input', () => {
-    renderedCaption = '';
-    renderPending = false;
-    saveState.textContent = 'Unsaved';
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(saveCurrentCaption, 650);
+  captionMode.addEventListener('change', () => {
+    renderCaptionView();
+    persistState();
   });
 
   window.addEventListener('keydown', (event) => {
-    if (!detailView.classList.contains('hidden')) {
-      const captionHasFocus = document.activeElement === caption;
-      const plainArrow = !captionHasFocus
-        && !event.altKey
-        && !event.ctrlKey
-        && !event.metaKey
-        && !event.shiftKey;
+    if (detailView.classList.contains('hidden')) {
+      return;
+    }
 
-      if ((event.altKey || plainArrow) && event.key === 'ArrowLeft') {
-        event.preventDefault();
-        move(-1);
-      } else if ((event.altKey || plainArrow) && event.key === 'ArrowRight') {
-        event.preventDefault();
-        move(1);
-      } else if (event.key === 'Escape') {
-        event.preventDefault();
-        showGallery();
-      } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-        event.preventDefault();
-        saveCurrentCaption();
-      }
+    const navigationKey = !event.ctrlKey && !event.metaKey && !event.shiftKey;
+    if (navigationKey && event.key === 'ArrowLeft') {
+      event.preventDefault();
+      move(-1);
+    } else if (navigationKey && event.key === 'ArrowRight') {
+      event.preventDefault();
+      move(1);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      showGallery();
     }
   });
 
@@ -101,24 +85,9 @@
     }
 
     if (message.type === 'caption' && message.id === currentCaptionRequest) {
-      caption.value = message.caption;
+      captionText = message.caption;
       renderedCaption = message.renderedCaption;
-      renderPending = false;
-      caption.disabled = false;
-      saveState.textContent = 'Saved';
       renderCaptionView();
-      return;
-    }
-
-    if (message.type === 'renderedCaption' && message.id === currentCaptionRequest) {
-      renderedCaption = message.renderedCaption;
-      renderPending = false;
-      renderCaptionView();
-      return;
-    }
-
-    if (message.type === 'saved' && filteredImages[currentIndex]?.id === message.id) {
-      saveState.textContent = 'Saved';
       return;
     }
 
@@ -184,25 +153,22 @@
     if (!image) {
       return;
     }
+
     currentCaptionRequest = image.id;
+    captionText = '';
+    renderedCaption = '';
     detailImage.src = image.source;
     detailImage.alt = image.name;
     detailPath.textContent = image.relativePath;
     detailPath.title = image.relativePath;
     position.textContent = `${currentIndex + 1} / ${filteredImages.length}`;
-    caption.value = '';
-    caption.disabled = true;
-    renderedCaption = '';
-    renderPending = false;
     captionPreview.textContent = 'Loading caption…';
-    saveState.textContent = 'Loading…';
     document.querySelector('#previous').disabled = currentIndex === 0;
     document.querySelector('#next').disabled = currentIndex === filteredImages.length - 1;
     vscode.postMessage({ type: 'loadCaption', id: image.id });
   }
 
   function move(offset) {
-    flushPendingSave();
     const nextIndex = Math.max(0, Math.min(filteredImages.length - 1, currentIndex + offset));
     if (nextIndex === currentIndex) {
       return;
@@ -212,99 +178,40 @@
   }
 
   function showGallery() {
-    flushPendingSave();
     detailView.classList.add('hidden');
     galleryView.classList.remove('hidden');
   }
 
-  function flushPendingSave() {
-    if (saveTimer) {
-      clearTimeout(saveTimer);
-      saveTimer = undefined;
-      saveCurrentCaption();
-    }
-  }
-
-  function saveCurrentCaption() {
-    const image = filteredImages[currentIndex];
-    if (!image || caption.disabled) {
-      return;
-    }
-    saveState.textContent = 'Saving…';
-    vscode.postMessage({ type: 'saveCaption', id: image.id, caption: caption.value });
-  }
-
-  function changeCaptionMode() {
-    if (captionMode.value !== 'raw') {
-      flushPendingSave();
-    }
-    renderCaptionView();
-    persistState();
-
-    if (captionMode.value === 'raw' && !caption.disabled) {
-      caption.focus({ preventScroll: true });
-    } else {
-      detailView.focus({ preventScroll: true });
-    }
-  }
-
   function renderCaptionView() {
     const mode = captionMode.value;
-    const showRaw = mode === 'raw';
-    caption.classList.toggle('hidden', !showRaw);
-    captionPreview.classList.toggle('hidden', showRaw);
     captionPreview.classList.toggle('markdown-view', mode === 'markdown');
+    captionPreview.classList.toggle('raw-view', mode === 'raw');
     captionPreview.classList.toggle('json-view', mode === 'json');
 
-    if (showRaw) {
-      captionHint.textContent = 'Auto-saves after typing · Ctrl/Cmd+S saves · Alt+←/→ switches images · Esc returns';
+    if (!captionText.trim()) {
+      captionPreview.textContent = 'No caption available.';
       return;
     }
 
-    if (caption.disabled) {
-      captionPreview.textContent = 'Loading caption…';
+    if (mode === 'raw') {
+      captionPreview.textContent = captionText;
       return;
     }
 
     if (mode === 'json') {
       renderJsonPreview();
-      captionHint.textContent = 'Formatted JSON preview · Select Raw text to edit · ←/→ switches images · Esc returns';
       return;
     }
 
-    captionHint.textContent = 'Rendered Markdown · Select Raw text to edit · ←/→ switches images · Esc returns';
-    if (!caption.value.trim()) {
-      captionPreview.textContent = 'No caption yet. Select Raw text to start writing.';
-      return;
-    }
-
-    if (renderedCaption) {
-      setSanitizedMarkdown(renderedCaption);
-      return;
-    }
-
-    if (!renderPending) {
-      renderPending = true;
-      captionPreview.textContent = 'Rendering Markdown…';
-      vscode.postMessage({
-        type: 'renderCaption',
-        id: currentCaptionRequest,
-        caption: caption.value,
-      });
-    }
+    setSanitizedMarkdown(renderedCaption);
   }
 
   function renderJsonPreview() {
-    if (!caption.value.trim()) {
-      captionPreview.textContent = 'No caption yet.';
-      return;
-    }
-
     try {
-      captionPreview.textContent = JSON.stringify(JSON.parse(caption.value), null, 2);
+      captionPreview.textContent = JSON.stringify(JSON.parse(captionText), null, 2);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      captionPreview.textContent = `Invalid JSON: ${message}\n\n${caption.value}`;
+      captionPreview.textContent = `Invalid JSON: ${message}\n\n${captionText}`;
     }
   }
 

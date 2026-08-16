@@ -1,6 +1,6 @@
 # Image Caption Gallery
 
-A focused VS Code extension for browsing image datasets and editing sidecar captions.
+A focused VS Code extension for browsing image datasets and previewing sidecar captions.
 
 It combines two modes in one editor tab:
 
@@ -15,12 +15,10 @@ It combines two modes in one editor tab:
 - Recursively discover `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp`, and `.avif` images.
 - Resize thumbnails from 96 px to 480 px instead of choosing a fixed column count.
 - Search by filename or relative path.
-- Click any thumbnail to open a side-by-side image/caption editor.
-- Read and write same-name `.txt` sidecar captions.
-- Render captions as Markdown by default, with selectable Raw text and formatted JSON modes.
-- Create a missing `.txt` caption file on first save.
-- Navigate with toolbar buttons or plain `Left` / `Right` after opening an image.
-- While editing Raw text, use `Alt+Left` / `Alt+Right` so normal cursor movement remains available.
+- Click any thumbnail to open a side-by-side image/caption viewer.
+- Read same-name `.txt` sidecar captions without modifying dataset files.
+- Render captions as Markdown by default, with read-only Raw text and formatted JSON modes.
+- Navigate with translucent image-edge controls or plain `Left` / `Right`.
 - Return to the gallery with `Escape` while preserving the gallery state.
 - Work with local folders and VS Code Remote SSH workspaces.
 

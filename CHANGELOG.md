@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.0.5
+
+- Move detail controls into a compact overlay on the image pane so captions use the full height.
+- Replace top navigation buttons with translucent image-edge arrows and a bilingual keyboard hint.
+- Remove caption editing, auto-save, and save-state UI; all caption modes are now read-only.
+- Keep Markdown as the default view, with read-only Raw text and formatted JSON alternatives.
+
 ## 0.0.4
 
 - Use one concise **Image Caption Gallery** action for both folders and images.

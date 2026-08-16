@@ -82,7 +82,7 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "vscode:prepublish": "npm run compile",
-    "package": "vsce package"
+    "package": "node scripts/package-extension.mjs"
   },
   "devDependencies": {
     "@types/node": "18.19.130",

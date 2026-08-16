@@ -11,19 +11,19 @@ Open a folder as an adjustable thumbnail gallery, select an image, and review it
 ### Gallery overview
 
 <p align="center">
-  <img src="https://gitee.com/outer_space/web-image/raw/master/vscode/Image-Caption-Gallery/01.jpg" alt="Image Caption Gallery showing an adjustable image dataset gallery" width="100%">
+  <img src="docs/images/gallery-overview.jpg" alt="Image Caption Gallery showing an adjustable image dataset gallery" width="100%">
 </p>
 
 ### Image and Markdown caption
 
 <p align="center">
-  <img src="https://gitee.com/outer_space/web-image/raw/master/vscode/Image-Caption-Gallery/03.jpg" alt="Image Caption Gallery showing an image beside an English Markdown caption" width="100%">
+  <img src="docs/images/gallery-detail-en.jpg" alt="Image Caption Gallery showing an image beside an English Markdown caption" width="100%">
 </p>
 
 ### Multilingual captions
 
 <p align="center">
-  <img src="https://gitee.com/outer_space/web-image/raw/master/vscode/Image-Caption-Gallery/02.jpg" alt="Image Caption Gallery showing an image beside a Chinese Markdown caption" width="100%">
+  <img src="docs/images/gallery-detail-zh.jpg" alt="Image Caption Gallery showing an image beside a Chinese Markdown caption" width="100%">
 </p>
 
 ## Features

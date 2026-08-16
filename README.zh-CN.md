@@ -11,19 +11,19 @@
 ### Gallery 总览
 
 <p align="center">
-  <img src="https://gitee.com/outer_space/web-image/raw/master/vscode/Image-Caption-Gallery/01.jpg" alt="Image Caption Gallery 可调节图片数据集 Gallery 总览" width="100%">
+  <img src="docs/images/gallery-overview.jpg" alt="Image Caption Gallery 可调节图片数据集 Gallery 总览" width="100%">
 </p>
 
 ### 图片与中文 Markdown Caption
 
 <p align="center">
-  <img src="https://gitee.com/outer_space/web-image/raw/master/vscode/Image-Caption-Gallery/02.jpg" alt="Image Caption Gallery 中文 Markdown Caption 预览" width="100%">
+  <img src="docs/images/gallery-detail-zh.jpg" alt="Image Caption Gallery 中文 Markdown Caption 预览" width="100%">
 </p>
 
 ### 图片与英文 Markdown Caption
 
 <p align="center">
-  <img src="https://gitee.com/outer_space/web-image/raw/master/vscode/Image-Caption-Gallery/03.jpg" alt="Image Caption Gallery 英文 Markdown Caption 预览" width="100%">
+  <img src="docs/images/gallery-detail-en.jpg" alt="Image Caption Gallery 英文 Markdown Caption 预览" width="100%">
 </p>
 
 ## 主要功能

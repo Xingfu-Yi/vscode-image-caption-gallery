@@ -3,6 +3,7 @@
 ## 0.0.8
 
 - Restore all three Marketplace preview images with stable Gitee raw HTTPS URLs for faster access from mainland China.
+- Keep GitHub README images repository-local while generating a Gitee-backed README only during VSIX packaging.
 - Add the Gallery overview and refresh both detail screenshots with larger Image and Text panes.
 - Keep images fully contained in the available pane and recompute their fitted size after window or divider resizing.
 - Add gesture-only 25%–400% zoom, mouse-drag and two-finger pan, and double-click reset without adding header controls.

@@ -1,8 +1,8 @@
 {
   "name": "image-caption-gallery",
   "displayName": "Image Caption Gallery",
-  "description": "Browse image folders as an adjustable gallery and preview sidecar captions without leaving VS Code.",
-  "version": "0.0.9",
+  "description": "Browse image folders and edit matching TXT captions side by side.",
+  "version": "0.1.0",
   "publisher": "xingfu-yi",
   "icon": "icon.png",
   "license": "MIT",
@@ -81,6 +81,7 @@
   },
   "scripts": {
     "compile": "tsc -p ./",
+    "test": "npm run compile && node --test test/*.test.js",
     "watch": "tsc -watch -p ./",
     "vscode:prepublish": "npm run compile",
     "package": "vsce package"

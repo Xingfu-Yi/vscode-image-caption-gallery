@@ -13,11 +13,21 @@
   const detailPath = document.querySelector('#detail-path');
   const imageWidth = document.querySelector('#image-width');
   const imageHeight = document.querySelector('#image-height');
+  const captionPane = document.querySelector('.caption-pane');
   const captionPreview = document.querySelector('#caption-preview');
+  const captionEditor = document.querySelector('#caption-editor');
   const captionMode = document.querySelector('#caption-mode');
+  const captionModeControl = document.querySelector('#caption-mode-control');
   const splitter = document.querySelector('#splitter');
   const textZoom = document.querySelector('#text-zoom');
-  const textZoomValue = document.querySelector('#text-zoom-value');
+  const editingLabel = document.querySelector('#editing-label');
+  const editState = document.querySelector('#edit-state');
+  const editCaption = document.querySelector('#edit-caption');
+  const editActions = document.querySelector('#edit-actions');
+  const cancelEdit = document.querySelector('#cancel-edit');
+  const saveEdit = document.querySelector('#save-edit');
+  const hideText = document.querySelector('#hide-text');
+  const showText = document.querySelector('#show-text');
 
   const persisted = vscode.getState() || {};
   const defaultSize = Number(document.body.dataset.defaultThumbnailSize || 220);
@@ -27,7 +37,17 @@
   let currentCaptionRequest = '';
   let captionText = '';
   let renderedCaption = '';
+  let captionExists = false;
+  let captionRevision = 'missing';
+  let captionLoaded = false;
+  let isEditing = false;
+  let isSaving = false;
+  let lastReportedDirty = false;
+  let pendingAction = null;
+  let activeDecisionRequest = '';
+  let decisionSequence = 0;
   let splitRatio = clamp(Number(persisted.splitRatio) || 0.64, 0.3, 0.8);
+  let textPaneHidden = Boolean(persisted.textPaneHidden);
   let imageZoomPercent = 100;
   let imagePanX = 0;
   let imagePanY = 0;
@@ -47,15 +67,17 @@
   applyThumbnailSize();
   applySplitRatio(splitRatio, false);
   applyTextZoom();
+  setTextPaneHidden(textPaneHidden, false);
+  updateEditControls();
 
   sizeInput.addEventListener('input', applyThumbnailSize);
   search.addEventListener('input', renderGallery);
   document.querySelector('#refresh').addEventListener('click', () => {
     vscode.postMessage({ type: 'refresh' });
   });
-  document.querySelector('#back').addEventListener('click', showGallery);
-  document.querySelector('#previous').addEventListener('click', () => move(-1));
-  document.querySelector('#next').addEventListener('click', () => move(1));
+  document.querySelector('#back').addEventListener('click', () => requestGuardedAction({ type: 'gallery' }));
+  document.querySelector('#previous').addEventListener('click', () => requestGuardedAction({ type: 'move', offset: -1 }));
+  document.querySelector('#next').addEventListener('click', () => requestGuardedAction({ type: 'move', offset: 1 }));
   document.querySelector('.image-pane').addEventListener('click', () => {
     detailView.focus({ preventScroll: true });
   });
@@ -76,7 +98,13 @@
     renderCaptionView();
     persistState();
   });
-  textZoom.addEventListener('input', applyTextZoom);
+  textZoom.addEventListener('change', applyTextZoom);
+  captionEditor.addEventListener('input', updateDirtyState);
+  editCaption.addEventListener('click', enterEditMode);
+  cancelEdit.addEventListener('click', requestCancelEditing);
+  saveEdit.addEventListener('click', saveCaption);
+  hideText.addEventListener('click', () => requestGuardedAction({ type: 'hideText' }));
+  showText.addEventListener('click', () => setTextPaneHidden(false));
   splitter.addEventListener('pointerdown', startSplitResize);
   splitter.addEventListener('pointermove', resizeSplit);
   splitter.addEventListener('pointerup', finishSplitResize);
@@ -101,22 +129,31 @@
       return;
     }
 
-    const focusedControl = document.activeElement === captionMode
-      || document.activeElement === textZoom
-      || document.activeElement === splitter;
-    const navigationKey = !focusedControl
+    if (isEditing && (event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 's') {
+      event.preventDefault();
+      saveCaption();
+      return;
+    }
+
+    if (isEditing && event.key === 'Escape') {
+      event.preventDefault();
+      requestCancelEditing();
+      return;
+    }
+
+    const navigationKey = !isTypingTarget(event.target)
       && !event.ctrlKey
       && !event.metaKey
       && !event.shiftKey;
     if (navigationKey && event.key === 'ArrowLeft') {
       event.preventDefault();
-      move(-1);
+      requestGuardedAction({ type: 'move', offset: -1 });
     } else if (navigationKey && event.key === 'ArrowRight') {
       event.preventDefault();
-      move(1);
-    } else if (event.key === 'Escape') {
+      requestGuardedAction({ type: 'move', offset: 1 });
+    } else if (!isEditing && event.key === 'Escape') {
       event.preventDefault();
-      showGallery();
+      requestGuardedAction({ type: 'gallery' });
     }
   });
 
@@ -155,10 +192,86 @@
       return;
     }
 
-    if (message.type === 'caption' && message.id === currentCaptionRequest) {
-      captionText = message.caption;
-      renderedCaption = message.renderedCaption;
-      renderCaptionView();
+    if (message.id && message.id !== currentCaptionRequest) {
+      return;
+    }
+
+    if (message.type === 'caption') {
+      applyCaptionMessage(message);
+      exitEditMode();
+      return;
+    }
+
+    if (message.type === 'captionSaved') {
+      const action = pendingAction;
+      pendingAction = null;
+      isSaving = false;
+      applyCaptionMessage(message);
+      exitEditMode();
+      if (action) {
+        performAction(action);
+      }
+      return;
+    }
+
+    if (message.type === 'captionReloaded') {
+      pendingAction = null;
+      isSaving = false;
+      applyCaptionMessage(message);
+      captionEditor.value = captionText;
+      isEditing = true;
+      updateEditControls();
+      updateDirtyState();
+      setEditStatus('Reloaded', false);
+      captionEditor.focus({ preventScroll: true });
+      return;
+    }
+
+    if (message.type === 'captionSaveCancelled') {
+      isSaving = false;
+      pendingAction = null;
+      updateEditControls();
+      setEditStatus(isCaptionDirty() ? 'Unsaved' : '', isCaptionDirty());
+      return;
+    }
+
+    if (message.type === 'captionSaveError') {
+      isSaving = false;
+      pendingAction = null;
+      updateEditControls();
+      setEditStatus(`Save failed: ${message.message}`, true);
+      return;
+    }
+
+    if (message.type === 'captionError') {
+      captionLoaded = false;
+      captionPreview.textContent = `Could not load caption: ${message.message}`;
+      editCaption.disabled = true;
+      return;
+    }
+
+    if (message.type === 'unsavedDecision' && message.requestId === activeDecisionRequest) {
+      activeDecisionRequest = '';
+      if (message.decision === 'save') {
+        saveCaption();
+      } else if (message.decision === 'discard') {
+        const action = pendingAction;
+        pendingAction = null;
+        exitEditMode();
+        if (action) {
+          performAction(action);
+        }
+      } else {
+        pendingAction = null;
+      }
+      return;
+    }
+
+    if (message.type === 'discardDecision' && message.requestId === activeDecisionRequest) {
+      activeDecisionRequest = '';
+      if (message.decision === 'discard') {
+        exitEditMode();
+      }
       return;
     }
 
@@ -226,6 +339,7 @@
     }
     imageResizeObserver.observe(imageStage);
     applySplitRatio(splitRatio, false);
+    setTextPaneHidden(textPaneHidden, false);
     loadCurrentImage();
     detailView.focus({ preventScroll: true });
   }
@@ -236,9 +350,13 @@
       return;
     }
 
+    exitEditMode();
     currentCaptionRequest = image.id;
     captionText = '';
     renderedCaption = '';
+    captionExists = false;
+    captionRevision = 'missing';
+    captionLoaded = false;
     imageZoomPercent = 100;
     imagePanX = 0;
     imagePanY = 0;
@@ -248,12 +366,41 @@
     detailImage.src = image.source;
     detailImage.alt = image.name;
     captionPreview.textContent = 'Loading caption…';
+    editCaption.disabled = true;
     updateDetailMetadata();
     vscode.postMessage({ type: 'loadCaption', id: image.id });
     if (detailImage.complete && detailImage.naturalWidth > 0) {
       detailImage.classList.remove('loading');
       updateImageDimensions();
       requestAnimationFrame(updateImageTransform);
+    }
+  }
+
+  function requestGuardedAction(action) {
+    if (isCaptionDirty()) {
+      pendingAction = action;
+      activeDecisionRequest = nextDecisionRequest();
+      vscode.postMessage({
+        type: 'confirmUnsaved',
+        requestId: activeDecisionRequest,
+        reason: action.type,
+      });
+      return;
+    }
+
+    if (isEditing) {
+      exitEditMode();
+    }
+    performAction(action);
+  }
+
+  function performAction(action) {
+    if (action.type === 'move') {
+      move(action.offset);
+    } else if (action.type === 'gallery') {
+      showGallery();
+    } else if (action.type === 'hideText') {
+      setTextPaneHidden(true);
     }
   }
 
@@ -270,6 +417,123 @@
     imageResizeObserver?.disconnect();
     detailView.classList.add('hidden');
     galleryView.classList.remove('hidden');
+  }
+
+  function enterEditMode() {
+    if (!captionLoaded || isEditing) {
+      return;
+    }
+    isEditing = true;
+    captionEditor.value = captionText;
+    updateEditControls();
+    updateDirtyState();
+    captionEditor.focus({ preventScroll: true });
+  }
+
+  function requestCancelEditing() {
+    if (!isEditing || isSaving) {
+      return;
+    }
+    if (!isCaptionDirty()) {
+      exitEditMode();
+      return;
+    }
+    activeDecisionRequest = nextDecisionRequest();
+    vscode.postMessage({ type: 'confirmDiscard', requestId: activeDecisionRequest });
+  }
+
+  function saveCaption() {
+    if (!isEditing || isSaving || !currentCaptionRequest) {
+      return;
+    }
+    isSaving = true;
+    updateEditControls();
+    setEditStatus('Saving…', false);
+    vscode.postMessage({
+      type: 'saveCaption',
+      id: currentCaptionRequest,
+      caption: captionEditor.value,
+      baseRevision: captionRevision,
+    });
+  }
+
+  function exitEditMode() {
+    isEditing = false;
+    isSaving = false;
+    captionEditor.value = captionText;
+    updateEditControls();
+    if (captionLoaded) {
+      renderCaptionView();
+    }
+    reportDirtyState(false);
+  }
+
+  function updateEditControls() {
+    captionPreview.classList.toggle('hidden', isEditing);
+    captionEditor.classList.toggle('hidden', !isEditing);
+    captionModeControl.classList.toggle('hidden', isEditing);
+    editingLabel.classList.toggle('hidden', !isEditing);
+    editCaption.classList.toggle('hidden', isEditing);
+    editActions.classList.toggle('hidden', !isEditing);
+    captionPane.classList.toggle('editing', isEditing);
+    captionEditor.disabled = isSaving;
+    cancelEdit.disabled = isSaving;
+    saveEdit.disabled = isSaving;
+    if (!isEditing) {
+      setEditStatus('', false);
+    }
+  }
+
+  function updateDirtyState() {
+    const dirty = isCaptionDirty();
+    reportDirtyState(dirty);
+    if (!isSaving) {
+      setEditStatus(dirty ? 'Unsaved' : '', dirty);
+    }
+  }
+
+  function reportDirtyState(dirty) {
+    if (dirty === lastReportedDirty) {
+      return;
+    }
+    lastReportedDirty = dirty;
+    vscode.postMessage({ type: 'dirtyState', dirty });
+  }
+
+  function setEditStatus(text, isDirty) {
+    editState.textContent = text;
+    editState.classList.toggle('hidden', !text);
+    editState.classList.toggle('dirty', isDirty);
+  }
+
+  function isCaptionDirty() {
+    return isEditing && captionEditor.value !== captionText;
+  }
+
+  function applyCaptionMessage(message) {
+    captionText = typeof message.caption === 'string' ? message.caption : '';
+    renderedCaption = typeof message.renderedCaption === 'string' ? message.renderedCaption : '';
+    captionExists = Boolean(message.exists);
+    captionRevision = typeof message.revision === 'string' ? message.revision : 'missing';
+    captionLoaded = true;
+    editCaption.disabled = false;
+    renderCaptionView();
+  }
+
+  function setTextPaneHidden(hidden, shouldPersist = true) {
+    textPaneHidden = hidden;
+    detailView.classList.toggle('text-hidden', hidden);
+    showText.classList.toggle('hidden', !hidden);
+    hideText.setAttribute('aria-expanded', String(!hidden));
+    if (shouldPersist) {
+      persistState();
+    }
+    requestAnimationFrame(updateImageTransform);
+  }
+
+  function nextDecisionRequest() {
+    decisionSequence += 1;
+    return `caption-decision-${decisionSequence}`;
   }
 
   function updateDetailMetadata() {
@@ -299,6 +563,9 @@
   }
 
   function startSplitResize(event) {
+    if (textPaneHidden) {
+      return;
+    }
     splitter.setPointerCapture(event.pointerId);
     splitter.classList.add('dragging');
     document.body.classList.add('resizing-panes');
@@ -488,18 +755,22 @@
   function applyTextZoom() {
     textZoomPercent = clamp(Number(textZoom.value), 70, 180);
     detailView.style.setProperty('--text-zoom', `${textZoomPercent}%`);
-    textZoomValue.value = `${textZoomPercent}%`;
     persistState();
   }
 
   function renderCaptionView() {
+    if (isEditing) {
+      return;
+    }
     const mode = captionMode.value;
     captionPreview.classList.toggle('markdown-view', mode === 'markdown');
     captionPreview.classList.toggle('raw-view', mode === 'raw');
     captionPreview.classList.toggle('json-view', mode === 'json');
 
     if (!captionText.trim()) {
-      captionPreview.textContent = 'No caption available.';
+      captionPreview.textContent = captionExists
+        ? 'Caption is empty. Select Edit to add text.'
+        : 'No matching .txt caption. Select Edit to create one.';
       return;
     }
 
@@ -556,6 +827,13 @@
     captionPreview.replaceChildren(template.content);
   }
 
+  function isTypingTarget(target) {
+    return target instanceof HTMLInputElement
+      || target instanceof HTMLTextAreaElement
+      || target instanceof HTMLSelectElement
+      || target instanceof HTMLButtonElement;
+  }
+
   function persistState() {
     vscode.setState({
       thumbnailSize: Number(sizeInput.value),
@@ -563,6 +841,7 @@
       captionMode: captionMode.value,
       splitRatio,
       textZoomPercent,
+      textPaneHidden,
     });
   }
 

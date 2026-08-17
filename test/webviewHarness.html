@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="../media/style.css">
+  <style>
+    :root {
+      --vscode-foreground: #cccccc;
+      --vscode-descriptionForeground: #a3a3a3;
+      --vscode-editor-background: #181818;
+      --vscode-input-background: #303030;
+      --vscode-input-foreground: #d4d4d4;
+      --vscode-input-border: #555555;
+      --vscode-panel-border: #3f3f3f;
+      --vscode-sideBarSectionHeader-background: #202020;
+      --vscode-button-background: #0e639c;
+      --vscode-button-foreground: #ffffff;
+      --vscode-button-hoverBackground: #1177bb;
+      --vscode-button-secondaryBackground: #2d2d2d;
+      --vscode-button-secondaryHoverBackground: #3a3a3a;
+      --vscode-button-border: transparent;
+      --vscode-dropdown-background: #303030;
+      --vscode-dropdown-foreground: #d4d4d4;
+      --vscode-dropdown-border: #555555;
+      --vscode-focusBorder: #007fd4;
+      --vscode-list-hoverBackground: #2a2d2e;
+      --vscode-editorWarning-foreground: #cca700;
+      --vscode-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --vscode-editor-font-family: "SFMono-Regular", Consolas, monospace;
+    }
+  </style>
+  <title>Image Caption Gallery 0.1.0 Preview</title>
+</head>
+<body data-default-thumbnail-size="220">
+  <section id="gallery-view">
+    <header class="toolbar">
+      <strong class="brand">Image Caption Gallery</strong>
+      <input id="search" class="search" type="search" placeholder="Search images…" aria-label="Search images">
+      <label class="size-control" title="Thumbnail size">
+        <span>Size</span>
+        <input id="thumbnail-size" type="range" min="96" max="480" step="8" aria-label="Thumbnail size">
+        <output id="thumbnail-size-value"></output>
+      </label>
+      <span id="count" class="muted">0 images</span>
+      <button id="refresh" class="icon-button" title="Refresh" aria-label="Refresh">↻</button>
+    </header>
+    <main id="gallery" class="gallery" aria-live="polite"></main>
+    <div id="empty" class="empty">Loading images…</div>
+  </section>
+
+  <section id="detail-view" class="detail-view hidden" tabindex="-1">
+    <header class="detail-header">
+      <div class="image-header">
+        <button id="back" class="button">← Gallery</button>
+        <strong class="column-title">Image</strong>
+        <span id="detail-path" class="detail-path"></span>
+        <span class="image-dimensions" title="Original image dimensions (width × height)">
+          <span id="image-width" class="dimension-value">—</span>
+          <span class="dimension-separator">×</span>
+          <span id="image-height" class="dimension-value">—</span>
+        </span>
+        <button id="show-text" class="button text-restore hidden">Text ‹</button>
+      </div>
+      <div class="header-divider" aria-hidden="true"></div>
+      <div class="text-header">
+        <strong class="column-title">Text</strong>
+        <span id="editing-label" class="editing-label hidden">Editing .txt</span>
+        <label id="caption-mode-control" class="mode-control">
+          <select id="caption-mode" aria-label="Text view mode">
+            <option value="markdown" selected>Markdown</option>
+            <option value="raw">Raw text</option>
+            <option value="json">JSON</option>
+          </select>
+        </label>
+        <label class="zoom-control"><span>Font</span><select id="text-zoom" aria-label="Text size percentage">
+          <option value="70">70%</option><option value="80">80%</option><option value="90">90%</option>
+          <option value="100" selected>100%</option><option value="110">110%</option><option value="120">120%</option>
+          <option value="130">130%</option><option value="140">140%</option><option value="150">150%</option>
+          <option value="160">160%</option><option value="170">170%</option><option value="180">180%</option>
+        </select></label>
+        <span id="edit-state" class="edit-state hidden" aria-live="polite">Unsaved</span>
+        <button id="edit-caption" class="button header-action" type="button">Edit</button>
+        <div id="edit-actions" class="edit-actions hidden">
+          <button id="cancel-edit" class="icon-button" type="button" title="Discard edits (Escape)">×</button>
+          <button id="save-edit" class="icon-button primary-action" type="button" title="Save caption (Control or Command S)">✓</button>
+        </div>
+        <button id="hide-text" class="icon-button pane-toggle" type="button" title="Hide Text pane">›</button>
+      </div>
+    </header>
+    <main class="detail-content">
+      <div class="image-pane">
+        <button id="previous" class="image-navigation previous">‹</button>
+        <div id="image-stage" class="image-stage"><img id="detail-image" alt="Selected image" draggable="false"></div>
+        <button id="next" class="image-navigation next">›</button>
+        <div class="navigation-hint">← / → 切换图片 · Switch images</div>
+      </div>
+      <div id="splitter" class="splitter" role="separator" tabindex="0"></div>
+      <aside class="caption-pane">
+        <div id="caption-preview" class="caption-preview markdown-view" aria-live="polite"></div>
+        <textarea id="caption-editor" class="caption-editor hidden" aria-label="Caption editor" spellcheck="false"></textarea>
+      </aside>
+    </main>
+  </section>
+
+  <script>
+    const demoSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#07204f"/><stop offset="1" stop-color="#7b2cff"/></linearGradient></defs><rect width="1200" height="900" rx="54" fill="url(#g)"/><circle cx="900" cy="210" r="90" fill="#19d3ff" opacity=".9"/><path d="M80 780 400 350l190 240 170-210 360 400Z" fill="#15c9ff" opacity=".85"/><path d="M80 780 400 350l190 240-170 190Z" fill="#ece9ff" opacity=".95"/><text x="80" y="120" fill="white" font-family="system-ui" font-size="58" font-weight="700">IMAGE DATASET</text><text x="82" y="185" fill="#bdeeff" font-family="system-ui" font-size="30">Visual review · Caption editing</text></svg>`;
+    const demoSource = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(demoSvg)}`;
+    const demoCaption = `# Mountain study\n\nA blue and violet landscape used to review the **image-caption pair**.\n\n- Subject: layered mountains\n- Lighting: cyan moonlight\n- Mood: calm and futuristic\n\n> Captions remain read-only until you select Edit.`;
+    let state = {};
+    let caption = demoCaption;
+    const records = Array.from({ length: 8 }, (_, index) => ({
+      id: `demo-${index}`,
+      name: `mountain-study-${String(index + 1).padStart(2, '0')}.png`,
+      relativePath: `dataset/mountain-study-${String(index + 1).padStart(2, '0')}.png`,
+      source: demoSource,
+    }));
+    window.acquireVsCodeApi = () => ({
+      getState: () => state,
+      setState: (next) => { state = next; },
+      postMessage: (message) => {
+        if (message.type === 'ready' || message.type === 'refresh') {
+          setTimeout(() => window.postMessage({ type: 'images', images: records }, '*'));
+        } else if (message.type === 'loadCaption') {
+          setTimeout(() => window.postMessage({
+            type: 'caption', id: message.id, caption,
+            renderedCaption: `<h1>Mountain study</h1><p>A blue and violet landscape used to review the <strong>image-caption pair</strong>.</p><ul><li>Subject: layered mountains</li><li>Lighting: cyan moonlight</li><li>Mood: calm and futuristic</li></ul><blockquote><p>Captions remain read-only until you select Edit.</p></blockquote>`,
+            exists: true, revision: 'demo-revision',
+          }, '*'));
+        } else if (message.type === 'saveCaption') {
+          caption = message.caption;
+          setTimeout(() => window.postMessage({ type: 'captionSaved', id: message.id, caption, renderedCaption: `<pre>${caption.replaceAll('&', '&amp;').replaceAll('<', '&lt;')}</pre>`, exists: true, revision: 'demo-saved' }, '*'));
+        } else if (message.type === 'confirmDiscard') {
+          setTimeout(() => window.postMessage({ type: 'discardDecision', requestId: message.requestId, decision: 'continue' }, '*'));
+        } else if (message.type === 'confirmUnsaved') {
+          setTimeout(() => window.postMessage({ type: 'unsavedDecision', requestId: message.requestId, decision: 'continue' }, '*'));
+        }
+      },
+    });
+  </script>
+  <script src="../media/main.js"></script>
+</body>
+</html>

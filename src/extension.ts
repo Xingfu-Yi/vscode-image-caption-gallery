@@ -1,6 +1,7 @@
 import * as crypto from 'node:crypto';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { decodeCaption, encodeCaption } from './captionCodec';
 
 const IMAGE_EXTENSIONS = new Set([
   '.jpg',
@@ -20,6 +21,26 @@ interface ImageRecord {
   relativePath: string;
   source: string;
 }
+
+interface CaptionDocument {
+  text: string;
+  exists: boolean;
+  revision: string;
+  hasBom: boolean;
+  eol: 'lf' | 'crlf';
+}
+
+interface WebviewMessage {
+  type?: string;
+  id?: string;
+  caption?: string;
+  baseRevision?: string;
+  requestId?: string;
+  reason?: string;
+  dirty?: boolean;
+}
+
+const MISSING_CAPTION_REVISION = 'missing';
 
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
@@ -92,9 +113,10 @@ async function openGallery(
   root: vscode.Uri,
   initialImageUri?: vscode.Uri,
 ): Promise<void> {
+  const baseTitle = `Image Caption Gallery — ${path.posix.basename(root.path)}`;
   const panel = vscode.window.createWebviewPanel(
     'imageCaptionGallery.gallery',
-    `Image Caption Gallery — ${path.posix.basename(root.path)}`,
+    baseTitle,
     vscode.ViewColumn.One,
     {
       enableScripts: true,
@@ -136,30 +158,114 @@ async function openGallery(
   };
 
   panel.webview.onDidReceiveMessage(
-    async (message: { type?: string; id?: string }) => {
+    async (message: WebviewMessage) => {
       if (message.type === 'ready' || message.type === 'refresh') {
         await sendImages();
         return;
       }
 
-      const imageUri = message.id ? imageById.get(message.id) : undefined;
-      if (!imageUri) {
+      if (message.type === 'dirtyState') {
+        panel.title = `${message.dirty ? '● ' : ''}${baseTitle}`;
+        return;
+      }
+
+      if (message.type === 'confirmUnsaved' && message.requestId) {
+        const reason = message.reason === 'hideText'
+          ? 'hiding the Text pane'
+          : message.reason === 'gallery'
+            ? 'returning to the Gallery'
+            : 'switching images';
+        const choice = await vscode.window.showWarningMessage(
+          `Save caption changes before ${reason}?`,
+          { modal: true },
+          'Save',
+          'Discard',
+          'Continue Editing',
+        );
+        await panel.webview.postMessage({
+          type: 'unsavedDecision',
+          requestId: message.requestId,
+          decision: choice === 'Save' ? 'save' : choice === 'Discard' ? 'discard' : 'continue',
+        });
+        return;
+      }
+
+      if (message.type === 'confirmDiscard' && message.requestId) {
+        const choice = await vscode.window.showWarningMessage(
+          'Discard the unsaved caption changes?',
+          { modal: true },
+          'Discard',
+          'Continue Editing',
+        );
+        await panel.webview.postMessage({
+          type: 'discardDecision',
+          requestId: message.requestId,
+          decision: choice === 'Discard' ? 'discard' : 'continue',
+        });
+        return;
+      }
+
+      const imageId = message.id;
+      const imageUri = imageId ? imageById.get(imageId) : undefined;
+      if (!imageId || !imageUri) {
         return;
       }
 
       const captionUri = sidecarUri(imageUri);
 
       if (message.type === 'loadCaption') {
-        const caption = await readCaption(captionUri);
-        const renderedCaption = await renderMarkdown(caption);
-        await panel.webview.postMessage({
-          type: 'caption',
-          id: message.id,
-          caption,
-          renderedCaption,
-        });
+        try {
+          const caption = await readCaption(captionUri);
+          await postCaption(panel.webview, 'caption', imageId, caption);
+        } catch (error) {
+          await panel.webview.postMessage({
+            type: 'captionError',
+            id: message.id,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+        return;
       }
 
+      if (
+        message.type === 'saveCaption'
+        && typeof message.caption === 'string'
+        && typeof message.baseRevision === 'string'
+      ) {
+        try {
+          const current = await readCaption(captionUri);
+          if (current.revision !== message.baseRevision) {
+            const choice = await vscode.window.showWarningMessage(
+              'This caption changed outside Image Caption Gallery while you were editing it.',
+              { modal: true, detail: 'Choose Overwrite to save your draft, or Reload to use the latest file contents.' },
+              'Overwrite',
+              'Reload',
+              'Continue Editing',
+            );
+
+            if (choice === 'Reload') {
+              await postCaption(panel.webview, 'captionReloaded', imageId, current);
+              return;
+            }
+
+            if (choice !== 'Overwrite') {
+              await panel.webview.postMessage({ type: 'captionSaveCancelled', id: message.id });
+              return;
+            }
+          }
+
+          const saved = await writeCaption(captionUri, message.caption, current);
+          await postCaption(panel.webview, 'captionSaved', imageId, saved);
+        } catch (error) {
+          const messageText = error instanceof Error ? error.message : String(error);
+          void vscode.window.showErrorMessage(`Could not save caption: ${messageText}`);
+          await panel.webview.postMessage({
+            type: 'captionSaveError',
+            id: message.id,
+            message: messageText,
+          });
+        }
+      }
     },
     undefined,
     context.subscriptions,
@@ -205,15 +311,58 @@ async function scanImages(root: vscode.Uri): Promise<vscode.Uri[]> {
   return images.sort((left, right) => left.path.localeCompare(right.path));
 }
 
-async function readCaption(uri: vscode.Uri): Promise<string> {
+async function readCaption(uri: vscode.Uri): Promise<CaptionDocument> {
   try {
-    return new TextDecoder().decode(await vscode.workspace.fs.readFile(uri));
+    const bytes = await vscode.workspace.fs.readFile(uri);
+    const decoded = decodeCaption(bytes);
+    return {
+      text: decoded.text,
+      exists: true,
+      revision: decoded.revision,
+      hasBom: decoded.hasBom,
+      eol: decoded.eol,
+    };
   } catch (error) {
     if (error instanceof vscode.FileSystemError && error.code === 'FileNotFound') {
-      return '';
+      return {
+        text: '',
+        exists: false,
+        revision: MISSING_CAPTION_REVISION,
+        hasBom: false,
+        eol: 'lf',
+      };
     }
     throw error;
   }
+}
+
+async function writeCaption(
+  uri: vscode.Uri,
+  text: string,
+  template: CaptionDocument,
+): Promise<CaptionDocument> {
+  const bytes = encodeCaption(text, {
+    hasBom: template.exists && template.hasBom,
+    eol: template.exists ? template.eol : 'lf',
+  });
+  await vscode.workspace.fs.writeFile(uri, bytes);
+  return readCaption(uri);
+}
+
+async function postCaption(
+  webview: vscode.Webview,
+  type: 'caption' | 'captionReloaded' | 'captionSaved',
+  id: string,
+  caption: CaptionDocument,
+): Promise<void> {
+  await webview.postMessage({
+    type,
+    id,
+    caption: caption.text,
+    renderedCaption: await renderMarkdown(caption.text),
+    exists: caption.exists,
+    revision: caption.revision,
+  });
 }
 
 async function renderMarkdown(caption: string): Promise<string> {
@@ -289,11 +438,13 @@ function getHtml(context: vscode.ExtensionContext, webview: vscode.Webview): str
           <span class="dimension-separator">×</span>
           <span id="image-height" class="dimension-value">—</span>
         </span>
+        <button id="show-text" class="button text-restore hidden" title="Show Text pane" aria-label="Show Text pane">Text ‹</button>
       </div>
       <div class="header-divider" aria-hidden="true"></div>
       <div class="text-header">
         <strong class="column-title">Text</strong>
-        <label class="mode-control">
+        <span id="editing-label" class="editing-label hidden">Editing .txt</span>
+        <label id="caption-mode-control" class="mode-control">
           <span class="visually-hidden">Text view</span>
           <select id="caption-mode" aria-label="Text view mode">
             <option value="markdown" selected>Markdown</option>
@@ -301,11 +452,30 @@ function getHtml(context: vscode.ExtensionContext, webview: vscode.Webview): str
             <option value="json">JSON</option>
           </select>
         </label>
-        <label class="zoom-control" title="Text size">
+        <label class="zoom-control" title="Text size percentage">
           <span>Font</span>
-          <input id="text-zoom" type="range" min="70" max="180" step="10" value="100" aria-label="Text size percentage">
-          <output id="text-zoom-value">100%</output>
+          <select id="text-zoom" aria-label="Text size percentage">
+            <option value="70">70%</option>
+            <option value="80">80%</option>
+            <option value="90">90%</option>
+            <option value="100" selected>100%</option>
+            <option value="110">110%</option>
+            <option value="120">120%</option>
+            <option value="130">130%</option>
+            <option value="140">140%</option>
+            <option value="150">150%</option>
+            <option value="160">160%</option>
+            <option value="170">170%</option>
+            <option value="180">180%</option>
+          </select>
         </label>
+        <span id="edit-state" class="edit-state hidden" aria-live="polite">Unsaved</span>
+        <button id="edit-caption" class="button header-action" type="button">Edit</button>
+        <div id="edit-actions" class="edit-actions hidden">
+          <button id="cancel-edit" class="icon-button" type="button" title="Discard edits (Escape)" aria-label="Discard edits">×</button>
+          <button id="save-edit" class="icon-button primary-action" type="button" title="Save caption (Control or Command S)" aria-label="Save caption">✓</button>
+        </div>
+        <button id="hide-text" class="icon-button pane-toggle" type="button" title="Hide Text pane" aria-label="Hide Text pane">›</button>
       </div>
     </header>
     <main class="detail-content">
@@ -320,6 +490,7 @@ function getHtml(context: vscode.ExtensionContext, webview: vscode.Webview): str
       <div id="splitter" class="splitter" role="separator" aria-label="Resize image and text panes" aria-orientation="vertical" aria-valuemin="30" aria-valuemax="80" aria-valuenow="64" tabindex="0"></div>
       <aside class="caption-pane">
         <div id="caption-preview" class="caption-preview markdown-view" aria-live="polite"></div>
+        <textarea id="caption-editor" class="caption-editor hidden" aria-label="Caption editor" spellcheck="false"></textarea>
       </aside>
     </main>
   </section>

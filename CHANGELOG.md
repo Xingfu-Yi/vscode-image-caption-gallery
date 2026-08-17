@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.0
+
+- Add an explicit, safe editing mode for existing or new same-name `.txt` captions.
+- Save with `Command+S` or `Ctrl+S`, cancel with `Escape`, and protect every in-page navigation action from discarding unsaved work.
+- Detect external caption changes before saving, with Overwrite, Reload, and Continue Editing choices.
+- Preserve UTF-8 BOM and LF/CRLF line endings for existing files; create new captions as UTF-8 with LF endings.
+- Add a session-persistent Text-pane hide mode for distraction-free image review.
+- Replace the Text font slider with a compact 70%–180% dropdown.
+- Shorten the Marketplace description to explain the image-and-TXT workflow at a glance.
+
 ## 0.0.9
 
 - Replace the generic extension icon with a distinctive Image, Text, and adjustable-divider brand mark.

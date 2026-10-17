@@ -1,8 +1,8 @@
 {
   "name": "image-caption-gallery",
   "displayName": "Image Caption Gallery",
-  "description": "Browse image folders and edit matching TXT captions side by side.",
-  "version": "0.1.0",
+  "description": "Browse image and video folders and edit matching TXT captions side by side.",
+  "version": "0.10.0",
   "publisher": "xingfu-yi",
   "icon": "icon.png",
   "license": "MIT",
@@ -23,7 +23,8 @@
     "caption",
     "dataset",
     "stable-diffusion",
-    "lora"
+    "lora",
+    "video"
   ],
   "activationEvents": [],
   "main": "./dist/extension.js",
@@ -42,7 +43,7 @@
       "explorer/context": [
         {
           "command": "imageCaptionGallery.open",
-          "when": "!explorerResourceIsFolder && resourceExtname =~ /\\.(avif|bmp|gif|jpe?g|png|webp)$/i",
+          "when": "!explorerResourceIsFolder && resourceExtname =~ /\\.(3fr|arw|avif|bmp|cr2|cr3|crw|dcr|dng|erf|gif|iiq|jpeg|jpg|k25|kdc|mef|mos|mrw|nef|nrw|orf|pef|png|raf|raw|rw2|rwl|sr2|srf|srw|webp|x3f|mp4|webm|mov|m4v|avi|mkv|mpg|mpeg|wmv|3gp|mts|m2ts|ogv|vob|flv)$/i",
           "group": "navigation@19"
         },
         {
@@ -54,7 +55,7 @@
       "editor/title/context": [
         {
           "command": "imageCaptionGallery.open",
-          "when": "resourceExtname =~ /\\.(avif|bmp|gif|jpe?g|png|webp)$/i",
+          "when": "resourceExtname =~ /\\.(3fr|arw|avif|bmp|cr2|cr3|crw|dcr|dng|erf|gif|iiq|jpeg|jpg|k25|kdc|mef|mos|mrw|nef|nrw|orf|pef|png|raf|raw|rw2|rwl|sr2|srf|srw|webp|x3f|mp4|webm|mov|m4v|avi|mkv|mpg|mpeg|wmv|3gp|mts|m2ts|ogv|vob|flv)$/i",
           "group": "navigation@19"
         }
       ]
@@ -75,21 +76,107 @@
           "minimum": 96,
           "maximum": 480,
           "description": "Default thumbnail width in pixels. It can also be changed from the gallery toolbar."
+        },
+        "imageCaptionGallery.maxPreviewResolution": {
+          "type": "integer",
+          "default": 2048,
+          "minimum": 0,
+          "scope": "resource",
+          "description": "Maximum detail preview pixel count is this value squared (2048 = about 4.2 MP). Oversized images are resized proportionally on the extension host. Set to 0 to load original images. Applies to local and Remote SSH galleries. Camera RAW files are always decoded into browser-readable images, including at 0. Grid thumbnails always use a separate static preview capped at 512² pixels (or a lower configured limit)."
+        },
+        "imageCaptionGallery.showCaption": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Show captions in newly opened galleries. The gallery toolbar and Text pane buttons can toggle captions for the current gallery."
+        },
+        "imageCaptionGallery.zoomSensitivity": {
+          "type": "number",
+          "default": 5,
+          "minimum": 0.5,
+          "maximum": 10,
+          "scope": "resource",
+          "description": "Pinch and Control/Command + wheel zoom sensitivity. Higher values zoom faster. Default 5 is five times the original response; set to 1 for the previous speed."
+        },
+        "imageCaptionGallery.videoCompatibility": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "native"
+          ],
+          "enumDescriptions": [
+            "Read compatible originals by HTTP byte range; convert only requested short fragments for other video/audio.",
+            "Read original videos directly by HTTP byte range; on-demand compatibility remains available after playback errors."
+          ],
+          "default": "auto",
+          "scope": "resource",
+          "description": "Video playback mode. Auto serves originals by byte range when possible and uses host-side FFmpeg for four-second fragments when necessary. Never waits for a whole-video compatibility copy."
+        },
+        "imageCaptionGallery.ffmpegPath": {
+          "type": "string",
+          "default": "ffmpeg",
+          "scope": "machine",
+          "description": "FFmpeg executable on the extension host. ffprobe must be installed alongside it. For Remote SSH, configure this in Remote settings; paths with spaces need no quoting."
+        },
+        "imageCaptionGallery.previewConcurrency": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 8,
+          "scope": "machine",
+          "description": "Maximum independent image decoder processes on this extension host. 0 automatically selects 1–4 based on available CPU and free memory; manual values 1–8 are capped by CPU and total memory. Applies on the SSH server for Remote SSH. More processes reduce queues across images, but use more memory and do not split one image across cores."
+        },
+        "imageCaptionGallery.previewExecutionMode": {
+          "type": "string",
+          "enum": [
+            "process",
+            "thread"
+          ],
+          "default": "process",
+          "scope": "machine",
+          "description": "Image decoding runtime on the extension host. Processes provide crash isolation; Worker threads reduce IPC overhead and may be faster. Both use CPU parallelism and share the configured decoder count. No GPU or external image tools required."
+        },
+        "imageCaptionGallery.videoPreviewMaxHeight": {
+          "type": "integer",
+          "enum": [
+            0,
+            1440,
+            1080,
+            720
+          ],
+          "default": 1440,
+          "scope": "resource",
+          "description": "Video quality for auto playback. Default 1440 uses the lower of source resolution and 2K. 0 preserves original resolution. No upscaling. Lower settings reduce CPU and SSH data; only requested four-second fragments are converted when required. Native-only mode bypasses this cap.",
+          "enumDescriptions": [
+            "Original resolution (codec compatibility may still need short FFmpeg fragments).",
+            "2K (up to 2560 × 1440, or portrait equivalent). Never enlarges smaller sources.",
+            "Up to 1920 × 1080, or portrait equivalent.",
+            "Up to 1280 × 720, or portrait equivalent."
+          ]
         }
       }
     }
   },
   "scripts": {
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && node scripts/copyPreviewRuntime.cjs",
     "test": "npm run compile && node --test test/*.test.js",
-    "watch": "tsc -watch -p ./",
+    "watch": "node scripts/copyPreviewRuntime.cjs && tsc -watch -p ./",
     "vscode:prepublish": "npm run compile",
-    "package": "vsce package"
+    "package": "vsce package",
+    "preview:harness": "npm run compile && node scripts/updateWebviewHarness.cjs",
+    "benchmark:previews": "npm run compile && node test/previewBenchmark.cjs",
+    "benchmark:posters": "npm run compile && node test/videoPosterBenchmark.cjs",
+    "benchmark:thumbnails": "npm run compile && node test/thumbnailBenchmark.cjs"
   },
   "devDependencies": {
     "@types/node": "18.19.130",
     "@types/vscode": "1.85.0",
     "@vscode/vsce": "^3.9.2",
+    "jsdom": "24.1.3",
     "typescript": "5.7.3"
+  },
+  "dependencies": {
+    "@imagemagick/magick-wasm": "0.0.44",
+    "hls.js": "1.7.3"
   }
 }

@@ -1,5 +1,140 @@
 # Changelog
 
+## 0.10.0
+
+- Make the visible Full screen button and F shortcut available for images as well as videos, including narrow detail toolbars. Add an image fullscreen entry in Settings; from Gallery it starts at the first matching image.
+- Add a private browser image viewer with real, user-initiated fullscreen, left/right and Home/End navigation, touch swipes, and buttons/cursor that hide after two idle seconds. Preserve portrait/landscape aspect ratios without cropping, with no Caption or VS Code chrome in fullscreen.
+- Reuse host previews and SSH private forwarding; download and decode adjacent images early, retain up to seven images within a 128 MiB decoded-memory estimate, merge in-flight preloads, and keep the previous image during slow changes. Skip oversized background downloads without reducing requested quality.
+- Validate file versions in the background, cancel unused requests, protect active transfers with cache leases, and keep browser sessions independent of Gallery. Opening an image viewer never reads captions or changes unsaved drafts.
+- Add fullscreen handoff, filtering, cache invalidation, memory budget and private-route tests, plus a read-only real-source browser harness. Verify native fullscreen, hidden controls and warm navigation in Chrome over SSH.
+
+## 0.9.0
+
+- Start neighbour preparation at host queue admission and continue the pipeline when adopting a pending neighbour. Prioritize foreground images, then neighbours, then grid thumbnails.
+- Reuse decoded elements and retain up to seven recent details within a 128 MiB estimated decoded-memory LRU. Keep a labelled previous frame or target thumbnail during slow switches and delay loading indicators by 150 ms.
+- Separate image switch-to-paint latency from host processing, resource loading and explicit browser decoding; preserve Caption freshness, hidden-caption zero reads and unsaved edits.
+- Add a private standalone browser player for Full screen, F and video double-click. Transfer playback state, use user-initiated native fullscreen and hide controls after two idle seconds. Retain Fill panel as a separate settings action.
+- Serve supported browser originals by byte range; bundle HLS.js 1.7.3 and its Apache license for requested H.264/AAC MPEG-TS fragments, independent of Gallery sessions. No whole-video conversion or public server port.
+- Serialize MediaSource updates, reject abort/close operations, ignore stale seeks and allow one state-preserving recovery. Log concrete decoder and fragment diagnostics in the Video output channel.
+- Add real-source SSH navigation and actual VS Code playback harnesses, private-browser-session/HLS tests, cache/prefetch/transition coverage and rapid-cancellation regressions. See docs/performance-0.9.0.md for measured results and limitations.
+
+## 0.8.1
+
+- Decode JPEG grid thumbnails at a reduced size instead of expanding full-resolution pixels. Remove bulky camera metadata while preserving ICC color profiles and EXIF orientation.
+- Deliver WebP thumbnails up to 256 KiB inline, avoiding an additional Remote SSH resource request; keep leased resource fallback for larger outputs and detail images.
+- Remove duplicate native lazy loading for image cards, prioritize visible rows, adapt the in-flight request count to decoder capacity, and release stalled or failed thumbnail slots.
+- Hide empty/broken image placeholders and expose queue, processing and message/display timings on hover.
+- Raise the bounded pixel cache to 384 MiB for large PNGs and reserve 768 MiB per decoder when choosing automatic concurrency.
+- Add low-memory JPEG, large PNG, inline transport, viewport priority and timeout recovery tests, a repeatable folder benchmark, and a browser harness using 287 generated JPEGs.
+
+## 0.8.0
+
+- Add Original / 2K (1440p) / 1080p / 720p video quality controls below the picture and in Settings. Default to the lower of source resolution and 2K, with proportional landscape/portrait bounds and no upscaling.
+- Apply quality caps to codec-compatible originals as well as compatibility fragments. Continue byte-range original playback when codecs and dimensions allow; never prepare whole-video copies.
+- Retain position, playing/paused state, speed, volume and Caption drafts during quality changes; request the saved fragment first and cancel stale selections.
+- Remove the permanent compatibility banner and centered video fallback overlay. Show loading, concrete decode errors and fallback actions below the picture, with details in Settings.
+- Finish finite streams when the last fragment is buffered, avoiding a stall when the final audio samples end early.
+- Migrate legacy quality preferences and add geometry, real 4K scaling, restart-at-position, hidden-panel and rapid-quality-change regression coverage.
+
+## 0.7.2
+
+- Send small first-frame JPEGs inline with poster results, avoiding an extra Remote SSH resource fetch; remove duplicate native lazy loading behind the Gallery visibility scheduler.
+- Show first-frame preparation/failure states, cancel stalled requests and release grid slots, and expose byte size, cache and timing details on hover.
+- Give short poster extraction an independently bounded 1–4-job CPU lane; use single-thread decoding/filtering/encoding and limited probing with one compatibility fallback.
+- Serve persisted poster cache hits before FFmpeg discovery; preserve deduplication, leases, source invalidation and stale-response protection.
+- Add eight-card, inline transport, timeout/failure, cache-before-tools, extraction fallback and busy-playback regression tests, plus a real eight-video browser harness.
+
+## 0.7.1
+
+- Add a visible Caption toggle to the detail toolbar for images and videos, with a C shortcut and existing unsaved-edit protection.
+- Add video focus mode (F or double-click), filling Gallery without reloading the stream; temporarily hide Caption and restore the previous layout on Escape.
+- Expose the VS Code window full-screen command from Settings and focused playback, since native HTML video fullscreen is blocked in webviews. Keep window fullscreen and Gallery focus independent.
+- Add 0.25×–4× playback-speed settings, synchronizing native rate changes and retaining speed across seeks and video switches.
+- Add Caption, focus/draft/restore, speed and fixed full-screen command regression tests; document the controls and fullscreen limitation in English and Chinese.
+
+## 0.7.0
+
+- Stream compatible original videos over private loopback HTTP with byte-range seeking and automatic VS Code Remote SSH forwarding.
+- Replace whole-file compatibility conversion with requested four-second VP8/Vorbis fragments, a full MediaSource timeline, bounded nearby buffering, distant seeking and cancellation.
+- Generate only first-frame JPEG posters for visible video cards; share and prioritize work, cache requested fragments/posters, and protect visible posters from eviction.
+- Default compatibility playback to a maximum height of 720p, with 480/720/1080/2160/original choices in Settings and VS Code configuration; retain original video dimensions in the header.
+- Check actual FFmpeg encoders and remove the libmp3lame requirement; offer native fallback when compatibility fails.
+- Inline bundled styles and scripts in the initial webview HTML to avoid an unstyled startup while fetching remote assets.
+- Add real range, fragment, poster, cache, cancellation, private-forwarding and MediaSource regression tests plus a 40-second streaming browser harness. Update English and Chinese instructions.
+
+## 0.6.0
+
+- Replace the serial decoder with a reusable multiprocess pool on the extension host; support Worker threads as a lower-IPC alternative and as a fallback when child processes cannot start.
+- Automatically select 1–4 decoders from CPU/free-memory budgets, or choose 1–8 manually with CPU/total-memory caps. Expose execution mode and parallelism in Settings and VS Code machine settings.
+- Preserve priority, deduplication and cache leases; cancel unowned active work, isolate decoder failures, and release idle decoders after 30 seconds. Share session settings across Gallery panels without writing workspace files.
+- Use scaled JPEG decoding for resized details and faster WebP encoding while retaining the configured dimensions, quality, alpha, orientation and animation behavior.
+- Show queue, source read, host processing, cache write and browser transfer/decode timings separately in Settings, including cache hits and actual execution mode.
+- Add real subprocess PID/reuse/fallback, cancellation, concurrency, memory-budget, session UI and timing regression tests plus a repeatable preview benchmark.
+
+## 0.5.2
+
+- Show original and preview dimensions beneath the current filename without opening Settings; clear stale dimensions when switching files.
+- Use adequately sized, correctly oriented embedded camera JPEG previews in TIFF-based RAW containers, with scaled JPEG decoding and faster WebP encoding.
+- Keep the configured pixel budget; reject undersized/aspect-mismatched previews and lossless sensor JPEG strips, and retain full LibRaw decoding for unavailable previews or original-resolution requests.
+- Version RAW preview caches and retain embedded-preview metadata across cache restoration; add RAW fallback, malformed metadata, byte-order, rotation, cache and visible-dimensions regression tests.
+
+## 0.5.1
+
+- Preload and decode the previous and next detail images after the current image is ready; swap decoded elements on warm navigation without a loading flash or duplicate transfers.
+- Preload adjacent captions only while Caption is visible, show cached text immediately, and revalidate quietly without overwriting edits.
+- Promote adopted requests above background work, cancel obsolete requests, retain at most three detail entries, and release neighbours when hiding the panel or leaving details.
+- Skip speculative images above 64 MiB estimated decoded RGBA per neighbour, including animation frames; keep videos on demand and preserve configured preview quality.
+- Avoid reloading the opened image when its initial directory scan completes; invalidate neighbours after refresh or preview-setting changes.
+- Add decoding, warm navigation, caption freshness, cancellation, priority, memory-budget and Remote SSH regression coverage.
+
+## 0.5.0
+
+- Consolidate display and playback preferences into an accessible Settings drawer available from Gallery and details, with explanations in English or Chinese.
+- Keep a compact single-row toolbar; move Caption format/font, dimensions, zoom, thumbnail size and compatibility controls into Settings.
+- Add auto/side-by-side/stacked layout selection, image-share and image-zoom sliders, and independent drawer scrolling down to 320 px windows.
+- Apply preview quality and video settings to the current Gallery without writing workspace configuration; link to VS Code settings for new-gallery defaults.
+- Preserve caption drafts, video playback, keyboard focus and Escape behavior when using settings; remove blurred navigation effects and reduce image padding.
+- Add Settings, session preference, responsive UI and configuration-override regression coverage, plus generated development previews.
+
+## 0.4.1
+
+- Virtualize Gallery rows so DOM size and decoded image memory stay bounded as directories grow; retain scroll position and keyboard access to offscreen files.
+- Use separate static 512² WebP thumbnails and cap active thumbnail loads at four; keep detail resolution and animation behavior.
+- Release grid resources when opening details or hiding a panel, and debounce full-dataset search.
+- Stream directory metadata in batches of 512 with stale-scan cancellation and compact final ordering.
+- Replace per-request cache sorting with reference counts, byte accounting, LRU map order and coalesced eviction; restore metadata with bounded parallel I/O.
+- Add 100,000-record grid, search, navigation, incremental scan and thumbnail regression coverage.
+
+## 0.4.0
+
+- Discover MP4, WebM, MOV, M4V, AVI, MKV and other FFmpeg video containers from folders and Explorer/editor context menus, alongside image and camera RAW files.
+- Add an on-demand native video player with playback, seek, volume, fullscreen and Space play/pause; show video dimensions in the header.
+- Use lightweight video cards in Gallery without fetching video contents during scanning or grid browsing.
+- Share TXT caption editing and full-width browsing with videos; preserve drafts when switching between media types.
+- Pause playback on panel hiding and release media sources when changing files or returning to Gallery; ignore stale video responses.
+- Add optional host-side FFmpeg/ffprobe compatibility processing with H.264/MP3 output, AAC audio conversion, progress, cancellation, deduplication and a leased 512 MiB disk cache.
+- Expose auto/native compatibility mode and a machine-scoped FFmpeg path; provide manual re-encoding after native playback errors.
+- Document local/Remote SSH tool requirements and add real AAC/AVI conversion, cache, cancellation and playback regression tests plus generated video fixtures.
+
+## 0.3.0
+
+- Discover camera RAW files, including DNG, CR2/CR3, NEF/NRW, ARW, RAF, ORF, RW2 and other LibRaw camera containers, from folders and image context menus.
+- Force the camera RAW decoder instead of showing embedded TIFF thumbnails; use camera white balance, sRGB output, and oriented original dimensions.
+- Convert RAW to WebP even below the resolution limit or when resizing is disabled; Load original requests a full-resolution decoded image.
+- Increase default pinch zoom sensitivity fivefold and raise the zoom limit to 800%; expose `imageCaptionGallery.zoomSensitivity` for live adjustment.
+- Normalize wheel units, limit individual zoom steps, and show a clickable percentage to reset the fitted view.
+- Add real Bayer DNG decoding, RAW remote-resource, and gesture regression tests.
+
+## 0.2.0
+
+- Add host-side proportional previews with a configurable total pixel limit, defaulting to 2048²; set `imageCaptionGallery.maxPreviewResolution` to `0` for originals.
+- Generate previews on the Remote SSH host, share cached resources across thumbnails and details, and prioritize detail requests in a background Worker.
+- Bundle a platform-independent WASM32 ImageMagick runtime; retain transparency, EXIF orientation, and GIF/WebP animations in WebP previews.
+- Add a 256 MiB LRU preview cache with active resource protection, cancellation, and explicit Load original recovery.
+- Add `imageCaptionGallery.showCaption` and a Gallery toolbar toggle; image-only mode no longer loads or renders captions, and restoring Text reloads the latest caption.
+- Keep original dimensions in the header, show preview dimensions on hover, and protect drafts during image resolution changes.
+- Add processing, cache, Worker, remote resource, and webview regression coverage.
+
 ## 0.1.0
 
 - Add an explicit, safe editing mode for existing or new same-name `.txt` captions.

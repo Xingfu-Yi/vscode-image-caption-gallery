@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="../media/style.css">
+<link rel="stylesheet" href="../media/style.css">
   <style>
     :root {
       --vscode-foreground: #cccccc;
@@ -30,72 +30,68 @@
       --vscode-editor-font-family: "SFMono-Regular", Consolas, monospace;
     }
   </style>
-  <title>Image Caption Gallery 0.1.0 Preview</title>
+  <title>Image Caption Gallery 0.10.0 Preview</title>
 </head>
-<body data-default-thumbnail-size="220">
+<body data-default-thumbnail-size="220" data-show-caption="true" data-zoom-sensitivity="5" data-gallery-settings="{&quot;resolution&quot;:2048,&quot;concurrency&quot;:0,&quot;executionMode&quot;:&quot;process&quot;,&quot;videoCompatibility&quot;:&quot;auto&quot;,&quot;videoMaxHeight&quot;:1440,&quot;ffmpegPath&quot;:&quot;ffmpeg&quot;}" data-ui-language="en">
+  <div id="browser-status" class="browser-status" role="status" aria-live="polite"></div>
   <section id="gallery-view">
     <header class="toolbar">
-      <strong class="brand">Image Caption Gallery</strong>
-      <input id="search" class="search" type="search" placeholder="Search images…" aria-label="Search images">
-      <label class="size-control" title="Thumbnail size">
-        <span>Size</span>
-        <input id="thumbnail-size" type="range" min="96" max="480" step="8" aria-label="Thumbnail size">
-        <output id="thumbnail-size-value"></output>
-      </label>
-      <span id="count" class="muted">0 images</span>
+      <strong class="brand">Gallery</strong>
+      <input id="search" class="search" type="search" placeholder="Search media…" aria-label="Search images and videos">
+      <span id="count" class="muted" role="status" aria-live="polite">0 images</span>
       <button id="refresh" class="icon-button" title="Refresh" aria-label="Refresh">↻</button>
+      <button id="gallery-settings" class="button settings-toggle" type="button" aria-haspopup="dialog" aria-controls="settings-dialog" aria-expanded="false" aria-label="Settings"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2-2 2 2 3 3 1 1 3h6l1-3 3-1 2-3-2-2 2-2-2-3-3-1-1-3z"/><circle cx="12" cy="12" r="3"/></svg><span>Settings</span></button>
     </header>
-    <main id="gallery" class="gallery" aria-live="polite"></main>
-    <div id="empty" class="empty">Loading images…</div>
+    <main id="gallery" class="gallery" aria-label="Media gallery"></main>
+    <div id="empty" class="empty">Loading media…</div>
   </section>
 
   <section id="detail-view" class="detail-view hidden" tabindex="-1">
     <header class="detail-header">
       <div class="image-header">
-        <button id="back" class="button">← Gallery</button>
-        <strong class="column-title">Image</strong>
-        <span id="detail-path" class="detail-path"></span>
-        <span class="image-dimensions" title="Original image dimensions (width × height)">
-          <span id="image-width" class="dimension-value">—</span>
-          <span class="dimension-separator">×</span>
-          <span id="image-height" class="dimension-value">—</span>
-        </span>
-        <button id="show-text" class="button text-restore hidden">Text ‹</button>
+        <button id="back" class="button" aria-label="Return to Gallery">←<span class="back-label"> Gallery</span></button>
+        <strong id="media-kind-label" class="visually-hidden">Image</strong>
+        <div class="detail-file"><span id="detail-path" class="detail-path"></span><span id="detail-dimensions" class="detail-dimensions" aria-live="polite"></span></div>
       </div>
-      <div class="header-divider" aria-hidden="true"></div>
       <div class="text-header">
-        <strong class="column-title">Text</strong>
         <span id="editing-label" class="editing-label hidden">Editing .txt</span>
-        <label id="caption-mode-control" class="mode-control">
-          <select id="caption-mode" aria-label="Text view mode">
-            <option value="markdown" selected>Markdown</option>
-            <option value="raw">Raw text</option>
-            <option value="json">JSON</option>
-          </select>
-        </label>
-        <label class="zoom-control"><span>Font</span><select id="text-zoom" aria-label="Text size percentage">
-          <option value="70">70%</option><option value="80">80%</option><option value="90">90%</option>
-          <option value="100" selected>100%</option><option value="110">110%</option><option value="120">120%</option>
-          <option value="130">130%</option><option value="140">140%</option><option value="150">150%</option>
-          <option value="160">160%</option><option value="170">170%</option><option value="180">180%</option>
-        </select></label>
         <span id="edit-state" class="edit-state hidden" aria-live="polite">Unsaved</span>
         <button id="edit-caption" class="button header-action" type="button">Edit</button>
         <div id="edit-actions" class="edit-actions hidden">
-          <button id="cancel-edit" class="icon-button" type="button" title="Discard edits (Escape)">×</button>
-          <button id="save-edit" class="icon-button primary-action" type="button" title="Save caption (Control or Command S)">✓</button>
+          <button id="cancel-edit" class="icon-button" type="button" title="Discard edits (Escape)" aria-label="Discard edits">×</button>
+          <button id="save-edit" class="icon-button primary-action" type="button" title="Save caption (Control or Command S)" aria-label="Save caption">✓</button>
         </div>
-        <button id="hide-text" class="icon-button pane-toggle" type="button" title="Hide Text pane">›</button>
+        <button id="detail-toggle-caption" class="button caption-quick-toggle" type="button" aria-pressed="true" aria-label="Hide Caption" title="Hide Caption (C)"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><rect x="2" y="3" width="16" height="14" rx="1"/><path d="M12 3v14M14 7h2m-2 3h2m-2 3h2"/></svg><span>Caption</span></button>
+        <button id="video-focus" class="button video-focus-toggle hidden" type="button" aria-label="Full screen in browser (F)" title="Full screen in browser (F)"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M7 2H2v5m11-5h5v5M2 13v5h5m11-5v5h-5"/></svg><span>Full screen</span></button>
+        <button id="detail-settings" class="button settings-toggle" type="button" aria-haspopup="dialog" aria-controls="settings-dialog" aria-expanded="false" aria-label="Settings"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2-2 2 2 3 3 1 1 3h6l1-3 3-1 2-3-2-2 2-2-2-3-3-1-1-3z"/><circle cx="12" cy="12" r="3"/></svg><span>Settings</span></button>
       </div>
     </header>
     <main class="detail-content">
       <div class="image-pane">
-        <button id="previous" class="image-navigation previous">‹</button>
-        <div id="image-stage" class="image-stage"><img id="detail-image" alt="Selected image" draggable="false"></div>
-        <button id="next" class="image-navigation next">›</button>
-        <div class="navigation-hint">← / → 切换图片 · Switch images</div>
+        <div id="video-focus-controls" class="video-focus-controls hidden" role="toolbar" aria-label="Focused video controls">
+          <span class="focus-hint">Fill panel</span>
+          <button id="focus-window-fullscreen" class="button" type="button">Browser full screen</button>
+          <button id="focus-settings" class="button settings-toggle" type="button" aria-haspopup="dialog" aria-controls="settings-dialog" aria-expanded="false" aria-label="Settings"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2-2 2 2 3 3 1 1 3h6l1-3 3-1 2-3-2-2 2-2-2-3-3-1-1-3z"/><circle cx="12" cy="12" r="3"/></svg><span>Settings</span></button>
+          <button id="exit-video-focus" class="button" type="button">Exit panel view (Esc)</button>
+          <span id="video-focus-status" role="status" aria-live="polite"></span>
+        </div>
+        <button id="previous" class="image-navigation previous" title="Previous file (Left Arrow)" aria-label="Previous file">‹</button>
+        <div id="image-stage" class="image-stage" title="Pinch to zoom · Drag or two-finger scroll to pan · Double-click to reset">
+          <img id="detail-image" alt="Selected image" draggable="false">
+          <video id="detail-video" class="detail-video hidden" controls controlslist="nofullscreen" preload="metadata" playsinline aria-label="Video player"></video>
+          <div id="image-status" class="image-status hidden" role="status">
+            <span id="image-status-message"></span>
+            <button id="load-original" class="button hidden" type="button">Load original</button>
+          </div>
+        </div>
+        <div id="video-toolbar" class="video-toolbar hidden" aria-label="Video playback options">
+          <div class="video-quality-control"><label for="video-quality">Quality</label><select id="video-quality"><option value="0">Original</option><option value="1440">2K</option><option value="1080">1080p</option><option value="720">720p</option></select><span id="video-quality-info"></span></div>
+          <div id="video-feedback" class="video-feedback" role="status" aria-live="polite"><span id="video-feedback-message"></span><button id="video-fallback" class="button hidden" type="button"></button></div>
+        </div>
+        <button id="next" class="image-navigation next" title="Next file (Right Arrow)" aria-label="Next file">›</button>
+        <div class="navigation-hint">← / → 切换文件 · Switch files</div>
       </div>
-      <div id="splitter" class="splitter" role="separator" tabindex="0"></div>
+      <div id="splitter" class="splitter" role="separator" aria-label="Resize image and text panes" aria-orientation="vertical" aria-valuemin="30" aria-valuemax="80" aria-valuenow="64" tabindex="0"></div>
       <aside class="caption-pane">
         <div id="caption-preview" class="caption-preview markdown-view" aria-live="polite"></div>
         <textarea id="caption-editor" class="caption-editor hidden" aria-label="Caption editor" spellcheck="false"></textarea>
@@ -103,30 +99,92 @@
     </main>
   </section>
 
+  <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
+    <header class="settings-heading"><h2 id="settings-title">Gallery settings</h2><button id="close-settings" class="icon-button" type="button" aria-label="Close settings" autofocus>×</button></header>
+    <div class="settings-body">
+      <p class="settings-intro">Changes apply immediately to this gallery. Use VS Code settings below to change defaults for new galleries.</p>
+      <section class="settings-section"><h3>Caption & layout</h3>
+        <div class="setting-field"><label id="caption-toggle-label">Caption text</label><button id="toggle-caption" class="button setting-toggle" type="button" aria-pressed="true" aria-labelledby="caption-toggle-label">Caption: On</button><p>Turn off for full-width browsing. Hidden captions are not loaded.</p></div>
+        <div class="setting-field"><label for="pane-layout">Pane layout</label><select id="pane-layout"><option value="auto">Auto · adapt to window</option><option value="side">Side by side</option><option value="stacked">Top and bottom</option></select><p>Auto stacks the panes in narrow windows.</p></div>
+        <div class="setting-field"><label for="pane-split">Image share</label><div class="setting-range"><input id="pane-split" type="range" min="30" max="80" step="1" value="64"><output id="pane-split-value">64%</output></div><p id="pane-split-help" data-active="Adjusts side-by-side panes. You can also drag the divider." data-inactive="Enable Caption and use side-by-side layout to adjust this.">Adjusts side-by-side panes. You can also drag the divider.</p></div>
+        <div id="caption-mode-control" class="setting-field"><label for="caption-mode">Caption reading format</label><select id="caption-mode" aria-label="Text view mode"><option value="markdown">Markdown</option><option value="raw">Plain text</option><option value="json">JSON</option></select><p>Changes the reading view; the saved TXT content stays the same.</p></div>
+        <div class="setting-field"><label for="text-zoom">Caption font size</label><select id="text-zoom" aria-label="Text size percentage"><option value="70">70%</option><option value="80">80%</option><option value="90">90%</option><option value="100">100%</option><option value="110">110%</option><option value="120">120%</option><option value="130">130%</option><option value="140">140%</option><option value="150">150%</option><option value="160">160%</option><option value="170">170%</option><option value="180">180%</option></select></div>
+      </section>
+      <section class="settings-section"><h3>Images</h3>
+        <div class="setting-field"><label>Full-screen image browsing</label><button id="image-browser-fullscreen" class="button setting-toggle" type="button">Open full screen (F)</button><p>Opens the current image, or the first image in the search results, in your browser. Click View full screen there to hide all browser and VS Code chrome. Use ← / → to browse images; controls hide after two idle seconds. Images fit in full without cropping. Caption drafts stay in Gallery.</p></div>
+        <div id="current-media-info" class="setting-field"><label>Current file</label><span id="settings-path" class="settings-path"></span><span class="image-dimensions" title="Original media dimensions (width × height)"><span id="image-width" class="dimension-value">—</span><span>×</span><span id="image-height" class="dimension-value">—</span></span></div>
+        <div id="image-zoom-field" class="setting-field"><label for="image-zoom-input">Image zoom</label><div class="setting-range"><input id="image-zoom-input" type="range" min="25" max="800" step="1" value="100"><button id="reset-image-zoom" class="button" type="button" aria-label="Reset image zoom to fit" title="Reset image zoom">100%</button></div><p>100% fits the available area. Click the percentage to reset.</p></div>
+        <div class="setting-field"><label for="thumbnail-size">Gallery thumbnail size</label><div class="setting-range"><input id="thumbnail-size" type="range" min="96" max="480" step="1" aria-label="Thumbnail size"><output id="thumbnail-size-value"></output></div><p>Changes card size; only nearby rows are rendered.</p></div>
+        <div class="setting-field"><label for="preview-resolution">Preview quality / SSH data use</label><select id="preview-resolution"><option value="1024">Data saver · 1024² pixels</option><option value="2048">Balanced · 2048² pixels</option><option value="4096">High detail · 4096² pixels</option><option value="0">Original resolution</option><option value="custom">Custom pixel budget…</option></select><div id="custom-resolution-field" class="custom-resolution hidden"><label for="custom-resolution">Pixel budget = value squared</label><input id="custom-resolution" type="number" min="0" max="65536" step="1" inputmode="numeric"></div><p>Limits total pixels, not the longest edge. Lower values use less SSH data; originals stay unchanged. Grid thumbnails stay small.</p></div>
+        <div class="setting-field"><label for="preview-execution-mode">Image decoder execution</label><select id="preview-execution-mode"><option value="process">Multiple processes · isolated decoders</option><option value="thread">Worker threads · lower communication overhead</option></select><p>Both use CPU cores. Processes isolate crashes; threads can be faster. Changes affect new work across this host session and preserve captions.</p></div>
+        <div class="setting-field"><label for="preview-concurrency">Parallel image decoders</label><select id="preview-concurrency"><option value="0">Auto · CPU and memory budget</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option></select><output id="preview-pool-status"></output><p>Reuses decoders on this extension host. Auto selects 1–4; manual 1–8 uses more memory. Applies to all open galleries for this host session. Use VS Code settings below to save a default.</p></div>
+        <div id="preview-performance-field" class="setting-field"><label>Current image preparation</label><p id="preview-performance" style="white-space:pre-line">—</p></div>
+        <div class="setting-field"><label for="zoom-sensitivity">Pinch / wheel zoom speed</label><div class="setting-range"><input id="zoom-sensitivity" type="range" min="0.5" max="10" step="0.5" value="5"><output id="zoom-sensitivity-value">5×</output></div><p>Higher is faster. Default 5×; use Ctrl/Command + wheel or pinch.</p></div>
+      </section>
+      <section class="settings-section"><h3>Video</h3>
+        <div class="setting-field"><label for="video-playback-rate">Playback speed</label><select id="video-playback-rate"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1">1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="1.75">1.75×</option><option value="2">2×</option><option value="3">3×</option><option value="4">4×</option></select><p>Applies immediately and stays selected when seeking or changing videos.</p></div>
+        <div class="setting-field"><label>Viewing area</label><button id="video-focus-settings" class="button setting-toggle" type="button">Fill panel</button><button id="video-window-fullscreen" class="button setting-toggle" type="button">Browser full screen</button><p>Full screen (F or double-click) opens a browser player at your current position, quality and speed. Click Continue and full screen there to enter real full screen. Fill panel stays inside Gallery and temporarily hides Caption; Escape restores it.</p><span id="video-control-status" role="status" aria-live="polite"></span></div>
+        <div class="setting-field"><label for="video-compatibility">Playback compatibility</label><select id="video-compatibility"><option value="auto">Auto · FFmpeg when needed</option><option value="native">Native playback only</option></select><p>Auto reads originals by byte range when codecs and quality allow; otherwise converts only requested short fragments. Native playback bypasses quality limits; selecting quality restores Auto.</p></div>
+        <div class="setting-field"><label for="video-max-height">Video quality</label><select id="video-max-height"><option value="0">Original</option><option value="1440">2K · 1440p</option><option value="1080">1080p</option><option value="720">720p</option></select><p>Default: the lower of source resolution and 2K (2560 × 1440; portrait supported). Never upscales. Lower quality reduces CPU and SSH data use. Switching keeps your position and speed. Original keeps source resolution; incompatible codecs still use short, on-demand fragments.</p><p id="video-playback-info"></p></div>
+        <div class="setting-field"><label for="ffmpeg-path">FFmpeg executable</label><input id="ffmpeg-path" type="text" value="ffmpeg" spellcheck="false" autocomplete="off"><p>A command on PATH or full path, without quotes. For SSH use the server path; ffprobe must be beside it.</p></div>
+      </section>
+    </div>
+    <footer class="settings-footer"><button id="open-default-settings" class="button" type="button">VS Code default settings…</button><span id="settings-status" role="status" aria-live="polite"></span></footer>
+  </dialog>
   <script>
     const demoSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#07204f"/><stop offset="1" stop-color="#7b2cff"/></linearGradient></defs><rect width="1200" height="900" rx="54" fill="url(#g)"/><circle cx="900" cy="210" r="90" fill="#19d3ff" opacity=".9"/><path d="M80 780 400 350l190 240 170-210 360 400Z" fill="#15c9ff" opacity=".85"/><path d="M80 780 400 350l190 240-170 190Z" fill="#ece9ff" opacity=".95"/><text x="80" y="120" fill="white" font-family="system-ui" font-size="58" font-weight="700">IMAGE DATASET</text><text x="82" y="185" fill="#bdeeff" font-family="system-ui" font-size="30">Visual review · Caption editing</text></svg>`;
     const demoSource = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(demoSvg)}`;
     const demoCaption = `# Mountain study\n\nA blue and violet landscape used to review the **image-caption pair**.\n\n- Subject: layered mountains\n- Lighting: cyan moonlight\n- Mood: calm and futuristic\n\n> Captions remain read-only until you select Edit.`;
+    const delay = Math.max(0, Math.min(2000, Number(new URLSearchParams(location.search).get('delay')) || 0));
+    window.harnessMetrics = { requests: [], status: [] };
+    const metricsOutput = document.createElement('output');
+    metricsOutput.id = 'harness-metrics'; metricsOutput.hidden = true; document.body.append(metricsOutput);
+    const reportMetrics = () => { metricsOutput.textContent = JSON.stringify(window.harnessMetrics); };
+    new MutationObserver(() => {
+      window.harnessMetrics.status.push({ time: performance.now(), loading: !document.querySelector('#image-status').classList.contains('hidden'), file: document.querySelector('#detail-path').textContent });
+      reportMetrics();
+    }).observe(document.querySelector('#image-status'), { attributes: true, attributeFilter: ['class'] });
+    let previewMode = 'process', previewWorkers = 0;
+    const poolStatus = () => window.postMessage({ type: 'previewPoolStatus', requested: previewWorkers, workers: previewWorkers || 2, backend: previewMode, mode: previewMode }, '*');
     let state = {};
     let caption = demoCaption;
-    const records = Array.from({ length: 8 }, (_, index) => ({
-      id: `demo-${index}`,
-      name: `mountain-study-${String(index + 1).padStart(2, '0')}.png`,
-      relativePath: `dataset/mountain-study-${String(index + 1).padStart(2, '0')}.png`,
-      source: demoSource,
+    const videoCount = Math.max(0, Math.min(100, Number(new URLSearchParams(location.search).get('videos')) || 0));
+    const sampleCount = Math.max(1, Math.min(100000, Number(new URLSearchParams(location.search).get('count')) || 8));
+    const records = videoCount ? Array.from({ length: videoCount }, (_, index) => ({ id: `demo-clip-${index}`, name: `first-frame-${index + 1}.mp4`, relativePath: `dataset/first-frame-${index + 1}.mp4`, kind: 'video' })) : Array.from({ length: sampleCount }, (_, index) => ({
+      id: `demo-${index}`, name: `mountain-study-${String(index + 1).padStart(2, '0')}.png`, relativePath: `dataset/mountain-study-${String(index + 1).padStart(2, '0')}.png`, source: demoSource,
     }));
+    if (!videoCount) {
+      records.push({ id: 'demo-compatible', name: 'video-compatible.mp4', relativePath: 'dataset/video-compatible.mp4', kind: 'video' });
+      records.push({ id: 'demo-video', name: 'video-sample.webm', relativePath: 'dataset/video-sample.webm', kind: 'video' });
+    }
     window.acquireVsCodeApi = () => ({
       getState: () => state,
       setState: (next) => { state = next; },
       postMessage: (message) => {
-        if (message.type === 'ready' || message.type === 'refresh') {
+        window.harnessMetrics.requests.push({ ...message, time: performance.now() }); reportMetrics();
+        if (message.type === 'releasePreview' && typeof streamingFixture !== 'undefined') { fetch('/release?request='+encodeURIComponent(message.requestId)); }
+        else if (message.type === 'getPreviewPool') { poolStatus(); }
+        else if (message.type === 'setPreviewConcurrency') { previewWorkers = message.concurrency; poolStatus(); }
+        else if (message.type === 'setPreviewExecutionMode') { previewMode = message.mode; poolStatus(); }
+        else if (message.type === 'ready' || message.type === 'refresh') {
+          poolStatus();
           setTimeout(() => window.postMessage({ type: 'images', images: records }, '*'));
+        } else if (message.type === 'loadVideoPoster') {
+          if (typeof streamingFixture !== 'undefined') {
+            fetch('/poster?id='+encodeURIComponent(message.id)).then(response=>{if(!response.ok)throw Error('Poster request failed');return response.json()}).then(result=>window.postMessage({...result,type:'videoPoster',id:message.id,requestId:message.requestId},'*')).catch(error=>window.postMessage({type:'videoPosterError',id:message.id,requestId:message.requestId,message:error.message},'*'));
+          } else { setTimeout(() => window.postMessage({ type: 'videoPoster', id: message.id, requestId: message.requestId, source: demoSource }, '*')); }
+        } else if (message.type === 'loadVideo' && typeof streamingFixture !== 'undefined') {
+          fetch('/video?height='+message.videoMaxHeight+'&native='+(message.videoCompatibility==='native')+'&force='+Boolean(message.compatible)+'&request='+encodeURIComponent(message.requestId)).then(response=>{if(!response.ok)throw Error('Video preparation failed');return response.json()}).then(result=>window.postMessage({...result,type:'video',id:message.id,requestId:message.requestId},'*')).catch(error=>window.postMessage({type:'videoError',id:message.id,requestId:message.requestId,message:error.message},'*'));
+        } else if (message.type === 'loadVideo') {
+          setTimeout(() => window.postMessage({ type: 'video', id: message.id, requestId: message.requestId, converted: message.id === 'demo-compatible', source: message.id === 'demo-compatible' ? 'fixtures/video-compatible.mp4' : 'fixtures/video-sample.webm' }, '*'));
+        } else if (message.type === 'loadPreview') {
+          setTimeout(() => window.postMessage({ type: 'preview', id: message.id, requestId: message.requestId, source: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(demoSvg.replace('IMAGE DATASET', `IMAGE ${message.id.replace('demo-', '')}`))}`, originalWidth: 1200, originalHeight: 900, width: 1200, height: 900, frameCount: 1, timings: { cacheHit: false, queueMs: 20, readMs: 5, processMs: 160, writeMs: 4, totalMs: 189, engine: previewMode } }, '*'), delay);
         } else if (message.type === 'loadCaption') {
           setTimeout(() => window.postMessage({
-            type: 'caption', id: message.id, caption,
+            type: 'caption', id: message.id, requestId: message.requestId, caption,
             renderedCaption: `<h1>Mountain study</h1><p>A blue and violet landscape used to review the <strong>image-caption pair</strong>.</p><ul><li>Subject: layered mountains</li><li>Lighting: cyan moonlight</li><li>Mood: calm and futuristic</li></ul><blockquote><p>Captions remain read-only until you select Edit.</p></blockquote>`,
             exists: true, revision: 'demo-revision',
-          }, '*'));
+          }, '*'), delay);
         } else if (message.type === 'saveCaption') {
           caption = message.caption;
           setTimeout(() => window.postMessage({ type: 'captionSaved', id: message.id, caption, renderedCaption: `<pre>${caption.replaceAll('&', '&amp;').replaceAll('<', '&lt;')}</pre>`, exists: true, revision: 'demo-saved' }, '*'));
@@ -138,6 +196,8 @@
       },
     });
   </script>
+  <script src="../media/galleryGrid.js"></script>
+  <script src="../media/videoStream.js"></script>
   <script src="../media/main.js"></script>
 </body>
 </html>

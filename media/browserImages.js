@@ -3,12 +3,12 @@
   const viewer = document.getElementById('viewer'), stage = document.getElementById('stage');
   const title = document.getElementById('title'), position = document.getElementById('position');
   const status = document.getElementById('status'), retry = document.getElementById('retry');
-  const previous = document.getElementById('previous'), next = document.getElementById('next'), fullscreen = document.getElementById('fullscreen');
+  const previous = document.getElementById('previous'), next = document.getElementById('next'), fullscreen = document.getElementById('fullscreen'), galleryLink = document.getElementById('gallery-link');
   const entries = new Map(), records = new Map(), skipped = new Set();
   const maxBytes = 128 * 1024 * 1024;
   const client = crypto.getRandomValues(new Uint32Array(4)).join('-');
   let index = 0, total = 0, displayed = -1, sequence = 0, language = 'en', clock = 0, disposed = false;
-  let idleTimer, loadingTimer, stateRequest, heartbeat, touchStart;
+  let idleTimer, loadingTimer, stateRequest, heartbeat, touchStart, fileMenu, renderedRecord = null;
   const text = (en, zh) => language === 'zh' ? zh : en;
   const endpoint = (name, params = {}) => {
     const url = new URL(name, location.href); url.search = location.search;
@@ -16,20 +16,38 @@
     for (const [key, value] of Object.entries(params)) { url.searchParams.set(key, String(value)); }
     return url;
   };
+  function showGalleryLink(gallery) {
+    if (!galleryLink) { return; }
+    const valid = gallery && /^[a-f0-9]{64}$/.test(gallery.token) && Number.isSafeInteger(gallery.index) && gallery.index >= 0;
+    const marker = valid ? /\/(?:v1|images|gallery)\/[a-f0-9]{64}\//.exec(location.pathname) : null;
+    galleryLink.hidden = !marker;
+    if (!marker) { galleryLink.removeAttribute('href'); return; }
+    const url = new URL(location.href);
+    url.pathname = `${url.pathname.slice(0, marker.index)}/gallery/${gallery.token}/viewer`;
+    url.searchParams.set('selected', String(gallery.index));
+    galleryLink.href = url.toString();
+    galleryLink.textContent = text('Gallery', '图库');
+  }
+  function installFileMenu() {
+    if (!window.GalleryFileMenu || fileMenu) { return; }
+    fileMenu = new window.GalleryFileMenu({ root: viewer, language,
+      resolveTarget: event => renderedRecord?.filePath && (stage.contains(event.target) || title.contains(event.target) || (event.type === 'keydown' && event.target === viewer)) ? renderedRecord : null,
+      copy: target => window.GalleryFileMenu.writeText(target.filePath) });
+  }
   function showStatus(message = '', failed = false) { status.textContent = message; retry.hidden = !failed; if (message) { wake(); } }
   function wake() {
     clearTimeout(idleTimer); viewer.classList.remove('idle');
     idleTimer = setTimeout(() => {
       const active = document.activeElement;
-      if (status.textContent || document.querySelector('button:hover') || (active?.tagName === 'BUTTON' && active.matches(':focus-visible'))) { wake(); return; }
+      if (viewer.querySelector('[role=menu]') || status.textContent || document.querySelector('button:hover') || (active?.tagName === 'BUTTON' && active.matches(':focus-visible'))) { wake(); return; }
       viewer.classList.add('idle');
     }, 2000);
   }
   function updateControls() {
     previous.disabled = index <= 0; next.disabled = index >= total - 1;
     position.textContent = total ? `${index + 1} / ${total}` : '';
-    const record = records.get(index);
-    title.textContent = record?.relativePath ?? text('Image', '图片'); title.title = title.textContent;
+    const record = renderedRecord ?? records.get(index);
+    title.textContent = record?.relativePath ?? text('Image', '图片'); title.title = record?.filePath ?? title.textContent;
     document.title = `${record?.name ?? text('Images', '图片')} — Gallery`;
     fullscreen.textContent = document.fullscreenElement ? text('Exit full screen · Esc', '退出全屏 · Esc') : text('View full screen · F', '进入全屏 · F');
     previous.setAttribute('aria-label', text('Previous image (←)', '上一张（←）')); next.setAttribute('aria-label', text('Next image (→)', '下一张（→）'));
@@ -83,10 +101,12 @@
       const data = await response.json();
       if (turn !== sequence || disposed) { return; }
       total = data.total; language = data.language;
+      showGalleryLink(data.gallery);
       let changed = false;
       for (const record of data.images) {
         const old = records.get(record.index), entry = entries.get(record.index);
         records.set(record.index, record);
+        if (displayed === record.index && !renderedRecord) { renderedRecord = record; }
         if (old && old.version !== record.version) {
           skipped.delete(record.index);
           if (entry) { discard(entry); if (record.index === index) { changed = true; } }
@@ -97,6 +117,7 @@
   }
   async function navigate(target) {
     if (disposed || target < 0 || target >= total) { return; }
+    fileMenu?.close();
     const turn = ++sequence; index = target; updateControls(); wake();
     clearTimeout(loadingTimer); showStatus();
     // Keep the last decoded image until the selected one is actually ready.
@@ -111,7 +132,7 @@
       if (!entry && turn === sequence) { entry = await prepare(target); }
       if (!entry || turn !== sequence || disposed) { return; }
       const old = stage.firstElementChild;
-      stage.replaceChildren(entry.image); displayed = target; entry.used = ++clock;
+      stage.replaceChildren(entry.image); displayed = target; renderedRecord = records.get(target) ?? null; fileMenu?.close(); updateControls(); entry.used = ++clock;
       if (old && old !== entry.image && ![...entries.values()].some(item => item.image === old)) { old.removeAttribute('src'); }
       clearTimeout(loadingTimer); viewer.classList.remove('switching'); showStatus();
       prune(); prefetchNeighbours();
@@ -134,6 +155,7 @@
   document.addEventListener('fullscreenchange', () => { updateControls(); wake(); });
   for (const event of ['pointermove', 'pointerdown', 'focusin']) { viewer.addEventListener(event, wake); }
   document.addEventListener('keydown', event => {
+    if (fileMenu?.menu) { return; }
     if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) { return; }
     wake();
     if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { viewer.focus({ preventScroll: true }); }
@@ -150,7 +172,7 @@
     if (Math.abs(x) > 60 && Math.abs(x) > Math.abs(y) * 2) { void navigate(index + (x < 0 ? 1 : -1)); }
   }, { passive: true });
   window.addEventListener('pagehide', () => {
-    disposed = true; clearInterval(heartbeat); clearTimeout(idleTimer); clearTimeout(loadingTimer); stateRequest?.abort();
+    disposed = true; renderedRecord = null; fileMenu?.dispose(); clearInterval(heartbeat); clearTimeout(idleTimer); clearTimeout(loadingTimer); stateRequest?.abort();
     for (const entry of entries.values()) { discard(entry); }
   });
   window.addEventListener('pageshow', event => { if (event.persisted) { location.reload(); } });
@@ -159,7 +181,7 @@
     try {
       const response = await fetch(endpoint('state')); if (!response.ok) { throw new Error(`HTTP ${response.status}`); }
       const data = await response.json(); if (disposed) { return; }
-      total = data.total; index = data.index; language = data.language;
+      total = data.total; index = data.index; language = data.language; showGalleryLink(data.gallery); installFileMenu();
       for (const image of data.images) { records.set(image.index, image); }
       heartbeat = setInterval(() => { void fetch(endpoint('heartbeat'), { method: 'POST' }).catch(() => {}); }, 15000);
       await navigate(index);

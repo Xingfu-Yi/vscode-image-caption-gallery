@@ -1,5 +1,75 @@
 # Changelog
 
+## 0.11.9
+
+- Refresh the Marketplace overview so two-image comparison and Caption editing are visible before the long feature list, with a clean synthetic comparison screenshot and concise A/B workflow summary.
+- Highlight the `E` editing shortcut, protected Caption workflow, linked comparison views and Remote SSH preview path in both English and Chinese documentation and package metadata.
+
+## 0.11.8
+
+- Add `E` as a detail-view shortcut to start editing the current Caption and focus the editor. If Caption is hidden or still loading, reveal and load it first, then enter editing automatically.
+- Leave Gallery, settings, comparison, text fields, native video controls and modified/repeated keys untouched; keep the existing save, discard and unsaved-draft protections.
+
+## 0.11.7
+
+- Add **Gallery** navigation to the independent browser image, video and comparison viewers. Return in the same tab to the original mixed-media result set, then open another card without returning to VS Code.
+- Preserve browser Gallery search, scroll position and current selection. Video returns retain position, quality, speed, volume and mute state; browser Gallery never requests Caption files.
+- Virtualize browser Gallery rows for very large folders. Listing remains metadata-only, DOM stays viewport-bounded, and only visible image thumbnails or video first-frame posters load with four-request concurrency and cancellation.
+- Keep browser Gallery behind the existing random private capability and Remote SSH loopback forwarding. Add same-tab routing, session-expiry, child-view cleanup, special-path copying, 100,000-record and zero-Caption regressions.
+
+## 0.11.6
+
+- Add Copy File Path to right-click / trackpad secondary-click menus for Gallery cards, image/video details, comparison panes and independent browser viewers. Copy validated original host paths, preserving literal special characters and Remote SSH paths.
+- Keep macOS comparison selection and caption editing menus; dismiss file menus before viewer Escape actions, retain the displayed-image target during pending navigation, and report clipboard failures with retry.
+
+## 0.11.5
+
+- Overlap two bounded compatibility-fragment requests with the existing host processing slots, while keeping MediaSource appends serial. Cancel obsolete seek work and prioritize the new playing fragment.
+- Buffer about 20 seconds of viewing time with rate-aware, bounded lookahead and encoded-memory limits in Gallery and browser playback. Preserve paused single-fragment loading and direct seeking.
+- Cap input decoder threads and drop surplus source frames before explicit preview transforms. Refresh compatibility caches without changing quality or output frame-rate settings.
+- Add exposed host queue/encode/cache timings and buffering diagnostics; reject empty fragments and cover reverse seeks, out-of-order responses, cancellation and byte pressure.
+
+## 0.11.4
+
+- Remove the floating arrow above the image divider. Keep mouse switching in the compact toolbar as Left: A / Left: B, alongside hold-Space comparison.
+- Preserve original-resolution headers, the 350 ms entry delay and the two-stage Escape selection flow.
+
+## 0.11.3
+
+- Show each displayed image’s original resolution in the comparison header, keeping it visible beside truncated filenames in panel and browser views.
+- Preserve A/B selections when returning to Gallery. A second fresh Escape clears them; key repeat does not clear the pair, and returning never restarts automatic entry.
+- Keep the 350 ms selection confirmation delay and cover resolution changes, original-image fallback, and two-stage Escape behavior.
+
+## 0.11.2
+
+- Clear both A/B selections when leaving comparison, while preserving Gallery scroll and decoded previews for later reuse.
+- Keep both selection markers visible for 350 ms before automatic entry. Cancel pending entry on deselection, clearing, search/refresh, ordinary preview opening, Settings, Escape, hiding or loss of focus; manual Compare remains immediate.
+- Add controlled-clock regressions for delayed entry, repeated pairs, both exit actions and cancelled/obsolete selections.
+
+## 0.11.1
+
+- Keep Ctrl/Command image selection in Gallery when the trailing click loses modifier flags or arrives after pointerup. Consume each selection gesture once, preserve Ctrl context-menu suppression, and retain ordinary pointer/keyboard opening.
+- Add regressions for delayed modifier-free clicks, first/second selection, and following ordinary and keyboard gestures.
+
+## 0.11.0
+
+- Add ordered Ctrl / Command image selection and a shared panel/browser comparison view: A on the left, fixed reference B on the right. Videos remain in the existing viewer.
+- Toggle the left pane with the center arrow; hold Space for a temporary B copy, release to restore the mouse state. Reset held keys on blur, page hiding and exit.
+- Link fit-relative zoom and normalized pan by default, allow independent views, and preserve both cameras when switching A/B. Keep small screens side by side.
+- Decode A, B and an independent B copy before enabling switches. Reuse protected preview caches, account for the extra decoded image, pause ordinary neighbour preloading and make ready switches without more network/decoding/Caption requests.
+- Open true browser fullscreen with the current pair, quality, cameras and toggle state using private, expiring SSH-forwarded sessions. Hide controls after two idle seconds; retain per-side retry/original actions, file-version checks and configuration invalidation.
+- Preserve the 0.10.1 video encoder/timestamp fix and 0.10.2 special-filename URI fix. Add selection, keyboard, camera, lifecycle, browser handoff and synthetic real-Chrome regression checks.
+
+## 0.10.2
+
+- Fix whole-folder loading failures and direct file opening for literal percent signs in local and Remote SSH filenames by removing duplicate URI-path decoding. Preserve literal percent escapes such as `%20` and `%2F` in labels and paths.
+- Add local/SSH regressions for nested special-character filenames, original previews, video discovery and matching captions; make the test URI serializer encode paths correctly.
+
+## 0.10.1
+
+- Fix first-fragment WebM playback failures caused by the experimental native Vorbis encoder writing blocks out of timestamp order. Select FFmpeg builds with libvorbis and give an actionable error for explicitly configured builds without it.
+- Invalidate previous compatibility-fragment caches; add encoder-discovery, raw WebM block-order, distant-seek and obsolete-cache regression tests.
+
 ## 0.10.0
 
 - Make the visible Full screen button and F shortcut available for images as well as videos, including narrow detail toolbars. Add an image fullscreen entry in Settings; from Gallery it starts at the first matching image.

@@ -6,7 +6,9 @@ import * as http from 'node:http';
 import * as path from 'node:path';
 import { availableParallelism } from 'node:os';
 import type { BrowserImages } from './browserImages';
+import type { BrowserGallery, GalleryLink } from './browserGallery';
 import { browserPlayerAsset, browserPlayerHtml, normalizePlaybackState, type BrowserPlaybackState } from './browserPlayer';
+import { readVideoOrientation, videoOrientationFilter, type AbsoluteVideoOrientation } from './videoOrientation';
 
 export interface VideoSource { filePath: string; mtime: number; size: number }
 export interface VideoSettings { mode: 'auto' | 'native'; ffmpegPath: string; maxHeight?: number; target?: 'webview' | 'browser' }
@@ -16,8 +18,8 @@ export interface PreparedVideo {
 }
 interface Probe { streams?: Array<{ codec_type?: string; codec_name?: string; pix_fmt?: string; width?: number; height?: number; sample_aspect_ratio?: string; side_data_list?: Array<{ rotation?: number }>; tags?: { rotate?: string } }>; format?: { duration?: string } }
 interface Tools { ffmpeg: string; ffprobe: string; encoders: Set<string> }
-interface BrowserSession { owner: string; id: string; title: string; state: BrowserPlaybackState; lastActivity: number; request?: AbortController }
-interface Session { browser?: BrowserSession; browserParent?: string; token: string; source: VideoSource; settings: VideoSettings; info: PreparedVideo; tools?: Tools; controller: AbortController }
+interface BrowserSession { owner: string; id: string; title: string; state: BrowserPlaybackState; lastActivity: number; request?: AbortController; gallery?: GalleryLink }
+interface Session { browser?: BrowserSession; browserParent?: string; token: string; source: VideoSource; version: string; settings: VideoSettings; info: PreparedVideo; tools?: Tools; controller: AbortController; orientation?: AbsoluteVideoOrientation }
 interface Artifact { file: string; bytes: Buffer; cacheHit: boolean; queueMs: number; processMs: number; cacheMs: number }
 export interface VideoPosterPreview { file: string; source: string; timing: { totalMs: number; queueMs: number; processMs: number; cacheMs: number; bytes: number; cacheHit: boolean } }
 interface Entry { file: string; size: number; refs: number }
@@ -27,10 +29,18 @@ const cancelled = (): Error => Object.assign(new Error('Video request cancelled.
 const nativeContainers = new Set(['.mp4', '.m4v', '.mov', '.webm']);
 const hash = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const segmentSeconds = 4;
+// FFmpeg otherwise creates a decoder thread per logical CPU. Two simultaneous
+// clips can oversubscribe large SSH hosts before the bounded encoder is reached.
+const decoderThreads = Math.min(4, Math.max(1, availableParallelism()));
 const playableH264 = (video: NonNullable<Probe['streams']>[number] | undefined): boolean => video?.codec_name === 'h264' && (!video.pix_fmt || ['yuv420p', 'yuvj420p'].includes(video.pix_fmt));
 export function needsVideoConversion(filename: string, probe: Probe, browser = false): boolean {
   const video = probe.streams?.find((s) => s.codec_type === 'video'), audio = probe.streams?.find((s) => s.codec_type === 'audio');
-  if (path.extname(filename).toLowerCase() === '.webm') { return !['vp8', 'vp9'].includes(video?.codec_name ?? '') || Boolean(audio && !['opus', 'vorbis'].includes(audio.codec_name ?? '')); }
+  if (path.extname(filename).toLowerCase() === '.webm') {
+    // Chromium does not consistently apply Matroska projection/display roll.
+    // Compatibility segments bake this metadata into their pixels exactly once.
+    const rotation = Number(video?.side_data_list?.find(data => data.rotation !== undefined)?.rotation ?? video?.tags?.rotate ?? 0);
+    return !Number.isFinite(rotation) || rotation % 360 !== 0 || !['vp8', 'vp9'].includes(video?.codec_name ?? '') || Boolean(audio && !['opus', 'vorbis'].includes(audio.codec_name ?? ''));
+  }
   return !(browser ? ['.mp4', '.m4v', '.mov'] : ['.mp4', '.m4v']).includes(path.extname(filename).toLowerCase()) || !playableH264(video) || Boolean(audio && !(browser ? ['aac', 'mp3'] : ['mp3']).includes(audio.codec_name ?? '')); 
 }
 
@@ -75,6 +85,8 @@ export class VideoService {
 
   private imageBrowser?: BrowserImages;
   attachImageBrowser(browser: BrowserImages): void { this.imageBrowser = browser; }
+  private gallery?: BrowserGallery;
+  attachGallery(gallery: BrowserGallery): void { this.gallery = gallery; }
 
   startServer(): Promise<string> {
     if (this.disposed) { return Promise.reject(cancelled()); }
@@ -101,13 +113,16 @@ export class VideoService {
     if (signal.aborted) { abort(); }
     try {
       const source = await this.source(id);
+      const version = await this.sourceVersion(source);
       if (this.disposed || controller.signal.aborted) { throw cancelled(); }
       const info: PreparedVideo = { token: randomBytes(32).toString('hex'), converted: false };
       let tools: Tools | undefined;
+      let orientation: AbsoluteVideoOrientation | undefined;
       if (settings.mode !== 'native' || force) {
+        orientation = await readVideoOrientation(source);
         try {
           tools = await this.tools(settings.ffmpegPath, settings.target === 'browser');
-          const key = hash([source.filePath, source.mtime, source.size, tools.ffprobe]);
+          const key = hash([source.filePath, source.mtime, source.size, version, tools.ffprobe]);
           let probe = this.metadata.get(key);
           if (!probe) {
             probe = await this.job<Probe>(`probe-${key}`, 3, controller.signal, async (stop) => JSON.parse((await this.run(tools!.ffprobe, ['-v', 'error', '-show_entries', 'stream=codec_type,codec_name,pix_fmt,width,height,sample_aspect_ratio:stream_side_data=rotation:stream_tags=rotate:format=duration', '-of', 'json', source.filePath], stop, 1024 * 1024, 15_000)).toString()));
@@ -118,7 +133,7 @@ export class VideoService {
           if (!video) { throw new Error('This file contains no video stream.'); }
           const sar = (video.sample_aspect_ratio || '1:1').split(':').map(Number);
           const displayWidth = Math.round((video.width || 0) * (sar[0] > 0 && sar[1] > 0 ? sar[0] / sar[1] : 1));
-          const rotation = Number(video.side_data_list?.find((data) => data.rotation !== undefined)?.rotation ?? video.tags?.rotate ?? 0);
+          const rotation = orientation ? { none: 0, cw90: 90, ccw90: -90, '180': 180 }[orientation.rotation] : Number(video.side_data_list?.find((data) => data.rotation !== undefined)?.rotation ?? video.tags?.rotate ?? 0);
           const rotated = Math.abs(rotation % 180) === 90;
           info.duration = Number(probe.format?.duration); info.width = rotated ? video.height : displayWidth; info.height = rotated ? displayWidth : video.height;
           if (!info.width || !info.height) { throw new Error('Could not determine video dimensions. Try original playback.'); }
@@ -126,19 +141,21 @@ export class VideoService {
           const cap = settings.maxHeight!;
           const downscale = cap > 0 && (Math.min(info.width, info.height) > cap || Math.max(info.width, info.height) > cap * 16 / 9);
           info.previewWidth = info.width; info.previewHeight = info.height;
-          if (force || downscale || needsVideoConversion(source.filePath, probe, settings.target === 'browser')) {
+          if (force || orientation || downscale || needsVideoConversion(source.filePath, probe, settings.target === 'browser')) {
             const browser = settings.target === 'browser';
             if (!tools.encoders.has(browser ? 'libx264' : 'libvpx')) { throw new Error(`On-demand playback needs FFmpeg with ${browser ? 'libx264 (H.264)' : 'libvpx (VP8)'}. Try original playback or select another FFmpeg in Settings.`); }
             const audio = probe.streams?.find((s) => s.codec_type === 'audio');
-            const audioCodec = !audio ? '' : browser ? tools.encoders.has('aac') ? 'aac' : '' : tools.encoders.has('libvorbis') || tools.encoders.has('vorbis') ? 'vorbis' : '';
-            if (audio && !audioCodec) { throw new Error(`On-demand audio needs ${browser ? 'AAC' : 'Vorbis'} support in FFmpeg. Set a compatible FFmpeg path in Settings.`); }
+            // Native Vorbis can mux blocks out of order, which Chromium rejects
+            // even when ffprobe decodes them. Use the stable libvorbis encoder.
+            const audioCodec = !audio ? '' : browser ? tools.encoders.has('aac') ? 'aac' : '' : tools.encoders.has('libvorbis') ? 'vorbis' : '';
+            if (audio && !audioCodec) { throw new Error(`On-demand audio needs ${browser ? 'AAC' : 'libvorbis (Vorbis)'} support in FFmpeg. Set a compatible FFmpeg path in Settings.`); }
             if (!Number.isFinite(info.duration) || !info.duration || info.duration <= 0) { throw new Error('Could not determine video duration for seekable compatibility playback. Try native playback.'); }
             info.converted = true; info.previewWidth = dimensions.width; info.previewHeight = dimensions.height;
             info.stream = { mime: browser ? `video/mp2t; codecs="avc1.42E01E${audioCodec ? ',mp4a.40.2' : ''}"` : `video/webm; codecs="vp8${audioCodec ? `,${audioCodec}` : ''}"`, segmentSeconds, duration: info.duration, ...(browser ? { format: 'hls' as const } : {}) };
           }
         } catch (error) {
           if (controller.signal.aborted) { throw cancelled(); }
-          if (force || !nativeContainers.has(path.extname(source.filePath).toLowerCase()) || !((error as NodeJS.ErrnoException).code === 'ENOENT')) {
+          if (force || orientation || !nativeContainers.has(path.extname(source.filePath).toLowerCase()) || !((error as NodeJS.ErrnoException).code === 'ENOENT')) {
             if ((error as NodeJS.ErrnoException).code === 'ENOENT') { throw new Error('FFmpeg or ffprobe is unavailable on the extension host. Install both tools or set the FFmpeg path in Settings.'); }
             throw error;
           }
@@ -146,7 +163,7 @@ export class VideoService {
         }
       }
       if (this.disposed || controller.signal.aborted) { throw cancelled(); }
-      const session: Session = { token: info.token, source, settings, info, tools, controller };
+      const session: Session = { token: info.token, source, version, settings, info, tools, controller, orientation };
       this.sessions.set(info.token, session); this.ownerTokens.set(owner, info.token);
       return info;
     } catch (error) { if (this.ownerControllers.get(owner) === controller) { this.release(owner); } throw error; }
@@ -154,11 +171,11 @@ export class VideoService {
   }
 
   /** Browser sessions have independent leases; closing Gallery must not stop them. */
-  async createBrowserPlayer(id: string, title: string, settings: VideoSettings, input: Partial<BrowserPlaybackState>): Promise<string> {
+  async createBrowserPlayer(id: string, title: string, settings: VideoSettings, input: Partial<BrowserPlaybackState>, gallery?: GalleryLink): Promise<string> {
     const owner = `browser-${randomUUID()}`, state = normalizePlaybackState(input);
     const info = await this.get(id, owner, new AbortController().signal, { ...settings, mode: 'auto', target: 'browser', maxHeight: state.quality });
     const session = this.sessions.get(info.token)!;
-    session.browser = { owner, id, title, state, lastActivity: Date.now() };
+    session.browser = { owner, id, title, state, lastActivity: Date.now(), gallery };
     if (!this.browserTimer) {
       this.browserTimer = setInterval(() => this.expireBrowserSessions(), 30000); this.browserTimer.unref();
     }
@@ -180,7 +197,8 @@ export class VideoService {
       const video = await this.get(browser.id, `${browser.owner}/stream`, controller.signal, { ...session.settings, mode: url.searchParams.get('native') === '1' ? 'native' : 'auto', target: 'browser', maxHeight: quality }, url.searchParams.get('compatible') === '1');
       if (controller.signal.aborted) { throw cancelled(); }
       this.sessions.get(video.token)!.browserParent = session.token;
-      return { title: browser.title, state: { ...browser.state, quality }, video };
+      const gallery = browser.gallery && (this.gallery ? this.gallery.link(browser.gallery.token, browser.id) : browser.gallery);
+      return { title: browser.title, filePath: session.source.filePath, state: { ...browser.state, quality }, video, gallery };
     } finally { session.controller.signal.removeEventListener('abort', stop); }
   }
 
@@ -244,16 +262,18 @@ export class VideoService {
   }
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    if (this.gallery && await this.gallery.handle(req, res)) { return; }
     if (this.imageBrowser && await this.imageBrowser.handle(req, res)) { return; }
+    const started = performance.now();
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
-    const match = /^\/v1\/([a-f0-9]{64})\/(original|poster|player|player\.js|player\.css|hls\.js|state|heartbeat|manifest\.m3u8|segment\/(\d+)\.(webm|ts))$/.exec(url.pathname);
+    const match = /^\/v1\/([a-f0-9]{64})\/(original|poster|player|player\.js|player\.css|hls\.js|file-menu\.js|file-menu\.css|state|heartbeat|manifest\.m3u8|segment\/(\d+)\.(webm|ts))$/.exec(url.pathname);
     const session = match ? this.sessions.get(match[1]) : undefined;
     if (!session || session.controller.signal.aborted) { res.writeHead(404); res.end(); return; }
     const parent = session.browser ? session : session.browserParent ? this.sessions.get(session.browserParent) : undefined;
-    if (parent?.browser) { parent.browser.lastActivity = Date.now(); }
+    if (parent?.browser) { parent.browser.lastActivity = Date.now(); this.gallery?.touch(parent.browser.gallery); }
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Access-Control-Allow-Headers', 'Range');
-    res.setHeader('Access-Control-Expose-Headers', 'Content-Length,Content-Range,Accept-Ranges');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Length,Content-Range,Accept-Ranges,Server-Timing');
     res.setHeader('Cache-Control', 'private, no-store'); res.setHeader('X-Content-Type-Options', 'nosniff');
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
     if (match![2] === 'heartbeat' && req.method === 'POST' && session.browser) { res.writeHead(204); res.end(); return; }
@@ -264,7 +284,7 @@ export class VideoService {
     res.once('close', () => { controller.abort(); session.controller.signal.removeEventListener('abort', abort); });
     try {
       const route = match![2];
-      if (['player', 'player.js', 'player.css', 'hls.js', 'state'].includes(route)) {
+      if (['player', 'player.js', 'player.css', 'hls.js', 'file-menu.js', 'file-menu.css', 'state'].includes(route)) {
         if (!session.browser) { res.writeHead(404); res.end(); return; }
         if (route === 'state') {
           const state = await this.browserState(session, url);
@@ -276,14 +296,14 @@ export class VideoService {
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(browserPlayerHtml(url.search)); return;
         }
         const bytes = await browserPlayerAsset(route);
-        res.writeHead(200, { 'Content-Type': route === 'player.css' ? 'text/css' : 'text/javascript', 'Content-Length': bytes.length }); res.end(req.method === 'HEAD' ? undefined : bytes); return;
+        res.writeHead(200, { 'Content-Type': route.endsWith('.css') ? 'text/css' : 'text/javascript', 'Content-Length': bytes.length }); res.end(req.method === 'HEAD' ? undefined : bytes); return;
       }
       if (route === 'manifest.m3u8') {
         if (session.info.stream?.format !== 'hls') { res.writeHead(404); res.end(); return; }
         res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' }); res.end(this.manifest(session, url.search)); return;
       }
       if (match![2] === 'original') { await this.original(req, res, session, controller.signal); return; }
-      let artifact: { file: string; bytes: Buffer };
+      let artifact: Artifact;
       if (match![2] === 'poster') { artifact = await this.posterBytes(session.source, session.settings.ffmpegPath, controller.signal); }
       else {
         const index = Number(match![3]); const duration = session.info.stream?.duration ?? 0;
@@ -294,6 +314,10 @@ export class VideoService {
         artifact = await this.segment(session, index, controller.signal);
       }
       if (controller.signal.aborted) { return; }
+      // Keep host queue/encoding separate from the client's request duration.
+      // Their difference includes the private tunnel, transfer and proxy delay.
+      const duration = (milliseconds: number): string => Math.max(0, milliseconds).toFixed(2);
+      res.setHeader('Server-Timing', `prepare;dur=${duration(performance.now() - started)}, queue;dur=${duration(artifact.queueMs)}, encode;dur=${duration(artifact.processMs)}, cache;dur=${duration(artifact.cacheMs)};desc="${artifact.cacheHit ? 'hit' : 'miss'}"`);
       res.writeHead(200, { 'Content-Type': match![2] === 'poster' ? 'image/jpeg' : session.info.stream?.format === 'hls' ? 'video/mp2t' : 'video/webm', 'Content-Length': artifact.bytes.length });
       res.end(req.method === 'HEAD' ? undefined : artifact.bytes);
     } catch (error) {
@@ -304,8 +328,10 @@ export class VideoService {
   }
 
   private async original(req: http.IncomingMessage, res: http.ServerResponse, session: Session, signal: AbortSignal): Promise<void> {
-    const stat = await fs.stat(session.source.filePath), size = stat.size;
-    if (size !== session.source.size || Math.floor(stat.mtimeMs) !== Math.floor(session.source.mtime)) { res.writeHead(409); res.end('The video changed. Reopen it to refresh.'); return; }
+    let version: string | undefined;
+    try { version = await this.sourceVersion(session.source); } catch { /* Report a stale source below. */ }
+    if (version !== session.version) { res.writeHead(409); res.end('The video changed. Reopen it to refresh.'); return; }
+    const size = session.source.size;
     let start = 0, end = size - 1;
     if (req.headers.range) {
       const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
@@ -328,47 +354,72 @@ export class VideoService {
     stream.once('error', () => res.destroy()); stream.pipe(res);
   }
 
-  private posterBytes(source: VideoSource, executable: string, signal: AbortSignal, owner?: string): Promise<Artifact> {
+  private async sourceVersion(source: VideoSource): Promise<string> {
+    const stat = await fs.stat(source.filePath, { bigint: true });
+    if (!stat.isFile() || Number(stat.size) !== source.size || Math.floor(Number(stat.mtimeNs) / 1e6) !== Math.floor(source.mtime)) { throw new Error('The video changed. Reopen it to refresh.'); }
+    // Orientation edits preserve original mtime and may preserve byte length.
+    // Inode/ctime distinguish replacement or in-place edits without hashing media.
+    return [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
+  }
+
+  private async verifyVersion(source: VideoSource, version: string, orientation?: AbsoluteVideoOrientation): Promise<void> {
+    if (await this.sourceVersion(source) !== version) { throw new Error('The video changed. Reopen it to refresh.'); }
+    if ((await readVideoOrientation(source))?.key !== orientation?.key) { throw new Error('Video direction changed. Reopen it to refresh.'); }
+  }
+
+  private async posterBytes(source: VideoSource, executable: string, signal: AbortSignal, owner?: string): Promise<Artifact> {
+    const version = await this.sourceVersion(source);
+    const orientation = await readVideoOrientation(source);
     // Look in the disk cache before starting FFmpeg, even after a host restart.
-    const key = hash([source.filePath, source.mtime, source.size, executable, 'poster-first-frame-v2']);
+    const key = hash([source.filePath, source.mtime, source.size, version, executable, orientation?.key, 'poster-first-frame-v3']);
     return this.artifact(key, '.jpg', signal, 0, async (stop) => {
       this.stats.posters++;
       const tools = await this.tools(executable);
-      const output = ['-map', '0:v:0', '-frames:v', '1', '-an', '-sn', '-dn', '-vf', 'scale=w=480:h=480:force_original_aspect_ratio=decrease', '-filter_threads', '1', '-threads', '1', '-q:v', '5', '-f', 'image2pipe', '-c:v', 'mjpeg', 'pipe:1'];
+      const output = ['-map', '0:v:0', '-frames:v', '1', '-an', '-sn', '-dn', '-vf', videoOrientationFilter(orientation) + 'scale=w=480:h=480:force_original_aspect_ratio=decrease', '-filter_threads', '1', '-threads', '1', '-q:v', '5', '-f', 'image2pipe', '-c:v', 'mjpeg', 'pipe:1'];
       const extract = (fast: boolean): Promise<Buffer> => this.run(tools.ffmpeg,
-        ['-nostdin', '-hide_banner', '-loglevel', 'error', ...(fast ? ['-probesize', '262144', '-analyzeduration', '100000', '-fpsprobesize', '0'] : []), '-threads', '1', '-i', source.filePath, ...output], stop, 2 * 1024 * 1024, fast ? 5_000 : 15_000);
+        ['-nostdin', '-hide_banner', '-loglevel', 'error', ...(fast ? ['-probesize', '262144', '-analyzeduration', '100000', '-fpsprobesize', '0'] : []), '-threads', '1', ...(orientation ? ['-noautorotate'] : []), '-i', source.filePath, ...output], stop, 2 * 1024 * 1024, fast ? 5_000 : 15_000);
+      let bytes: Buffer;
       try {
-        const bytes = await extract(true); if (!bytes.length) { throw new Error('No first frame was produced.'); } return bytes;
+        bytes = await extract(true); if (!bytes.length) { throw new Error('No first frame was produced.'); }
       } catch (error) {
         if (stop.aborted || this.disposed) { throw cancelled(); }
         // Containers missing early codec headers get one normal-probing fallback.
-        const bytes = await extract(false); if (!bytes.length) { throw new Error('This file did not produce a first video frame.'); } return bytes;
+        bytes = await extract(false); if (!bytes.length) { throw new Error('This file did not produce a first video frame.'); }
       }
+      await this.verifyVersion(source, version, orientation);
+      return bytes;
     }, owner, true);
   }
 
-  private segment(session: Session, index: number, signal: AbortSignal): Promise<Artifact> {
+  private async segment(session: Session, index: number, signal: AbortSignal): Promise<Artifact> {
+    await this.verifyVersion(session.source, session.version, session.orientation);
     const start = index * segmentSeconds, seconds = Math.min(segmentSeconds, session.info.stream!.duration - start);
     const height = session.settings.maxHeight ?? 1440;
     const dimensions = videoPreviewDimensions(session.info.width!, session.info.height!, height);
     const bitrate = Math.min(20000, Math.max(1500, Math.round(dimensions.width * dimensions.height * 0.0022)));
+    // Output was already 30 fps. Discard surplus source frames before explicit rotation
+    // and scaling instead of processing 60/120 fps and dropping them afterward.
     if (session.info.stream!.format === 'hls') {
-      const key = hash([session.source.filePath, session.source.mtime, session.source.size, session.tools!.ffmpeg, index, height, session.info.stream!.mime, 'browser-h264-aac-ts-v1']);
+      const key = hash([session.source.filePath, session.source.mtime, session.source.size, session.version, session.tools!.ffmpeg, index, height, session.info.stream!.mime, session.orientation?.key, 'browser-h264-aac-ts-v3']);
       return this.artifact(key, '.ts', signal, 2, async stop => {
         this.stats.segments++;
         const audio = session.info.stream!.mime.includes('mp4a');
-        return this.run(session.tools!.ffmpeg, ['-nostdin', '-hide_banner', '-loglevel', 'error', '-ss', String(start), '-i', session.source.filePath, '-t', String(seconds), '-map', '0:v:0', ...(audio ? ['-map', '0:a:0'] : ['-an']), '-sn', '-dn',
-          '-vf', `scale=${dimensions.width}:${dimensions.height},setsar=1`, '-filter_threads', '1', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-crf', '23', '-pix_fmt', 'yuv420p', '-r', '30', '-g', '120', '-keyint_min', '120', '-sc_threshold', '0', '-threads', '2',
+        const bytes = await this.run(session.tools!.ffmpeg, ['-nostdin', '-hide_banner', '-loglevel', 'error', '-ss', String(start), '-threads', String(decoderThreads), ...(session.orientation ? ['-noautorotate'] : []), '-i', session.source.filePath, '-t', String(seconds), '-map', '0:v:0', ...(audio ? ['-map', '0:a:0'] : ['-an']), '-sn', '-dn',
+          '-vf', `fps=30,${videoOrientationFilter(session.orientation)}scale=${dimensions.width}:${dimensions.height},setsar=1`, '-filter_threads', '1', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-crf', '23', '-pix_fmt', 'yuv420p', '-r', '30', '-g', '120', '-keyint_min', '120', '-sc_threshold', '0', '-threads', '2',
           ...(audio ? ['-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-ar', '48000'] : []), '-f', 'mpegts', '-mpegts_flags', '+resend_headers', '-muxdelay', '0', '-muxpreload', '0', 'pipe:1'], stop, 32 * 1024 * 1024);
+        await this.verifyVersion(session.source, session.version, session.orientation);
+        return bytes;
       });
     }
-    const key = hash([session.source.filePath, session.source.mtime, session.source.size, session.tools!.ffmpeg, index, height, session.info.stream!.mime, 'vp8-vorbis-quality-v3']);
+    const key = hash([session.source.filePath, session.source.mtime, session.source.size, session.version, session.tools!.ffmpeg, index, height, session.info.stream!.mime, session.orientation?.key, 'vp8-safe-audio-v6']);
     return this.artifact(key, '.webm', signal, 2, async (stop) => {
       this.stats.segments++;
-      const audio = session.info.stream!.mime.includes('vorbis') ? session.tools!.encoders.has('libvorbis') ? 'libvorbis' : 'vorbis' : '';
-      return this.run(session.tools!.ffmpeg, ['-nostdin', '-hide_banner', '-loglevel', 'error', '-ss', String(start), '-i', session.source.filePath, '-t', String(seconds), '-map', '0:v:0', ...(audio ? ['-map', '0:a:0'] : ['-an']), '-sn', '-dn',
-        '-vf', `scale=${dimensions.width}:${dimensions.height},setsar=1`, '-filter_threads', '1',
-        '-c:v', 'libvpx', '-deadline', 'realtime', '-cpu-used', '8', '-b:v', `${bitrate}k`, '-crf', '32', '-r', '30', '-g', '60', '-threads', '2', ...(audio ? ['-c:a', audio, '-strict', '-2', '-b:a', '96k', '-ac', '2', '-ar', '48000'] : []), '-f', 'webm', '-cluster_time_limit', '1000', 'pipe:1'], stop, 16 * 1024 * 1024);
+      const audio = session.info.stream!.mime.includes('vorbis') ? 'libvorbis' : '';
+      const bytes = await this.run(session.tools!.ffmpeg, ['-nostdin', '-hide_banner', '-loglevel', 'error', '-ss', String(start), '-threads', String(decoderThreads), ...(session.orientation ? ['-noautorotate'] : []), '-i', session.source.filePath, '-t', String(seconds), '-map', '0:v:0', ...(audio ? ['-map', '0:a:0'] : ['-an']), '-sn', '-dn',
+        '-vf', `fps=30,${videoOrientationFilter(session.orientation)}scale=${dimensions.width}:${dimensions.height},setsar=1`, '-filter_threads', '1',
+        '-c:v', 'libvpx', '-deadline', 'realtime', '-cpu-used', '8', '-b:v', `${bitrate}k`, '-crf', '32', '-r', '30', '-g', '60', '-threads', '2', ...(audio ? ['-c:a', audio, '-b:a', '96k', '-ac', '2', '-ar', '48000'] : []), '-f', 'webm', '-cluster_time_limit', '1000', 'pipe:1'], stop, 16 * 1024 * 1024);
+      await this.verifyVersion(session.source, session.version, session.orientation);
+      return bytes;
     });
   }
 
@@ -441,7 +492,7 @@ export class VideoService {
           const probe = path.extname(executable).toLowerCase() === '.exe' ? 'ffprobe.exe' : 'ffprobe';
           const tool = { ffmpeg: executable, ffprobe: path.dirname(executable) === '.' ? probe : path.join(path.dirname(executable), probe), encoders };
           usable ??= tool;
-          if (browser ? encoders.has('libx264') && encoders.has('aac') : encoders.has('libvpx') && (encoders.has('libvorbis') || encoders.has('vorbis'))) { return tool; }
+          if (browser ? encoders.has('libx264') && encoders.has('aac') : encoders.has('libvpx') && encoders.has('libvorbis')) { return tool; }
         } catch (error) { failure = error; }
       }
       if (usable) { return usable; } throw failure ?? new Error('FFmpeg is unavailable.');

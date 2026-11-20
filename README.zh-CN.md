@@ -2,38 +2,53 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-一个快速、本地优先的 VS Code 图文数据工具，让你无需离开编辑器就能浏览图片、视频数据集并编辑配套 Caption。
+一个快速、本地优先的 VS Code 图文数据工具，让你无需离开编辑器就能浏览图片／视频数据集、对比图片并编辑配套 Caption。
 
-你可以把一个目录打开为可调节缩略图大小的 Gallery，点击任意图片或视频后，在左侧查看媒体、右侧阅读或编辑同名 `.txt` 文本。Caption 默认保持只读，并支持 Markdown、原始文本和格式化 JSON 三种显示方式。
+**双图并排对比并联动缩放／平移；按 `E` 立即编辑同名 `.txt` Caption；浏览本地或 Remote SSH 大目录时，无需预先传输全部原图。**
+
+## 核心亮点
+
+| 双图对比 | Caption 查看与编辑 |
+| --- | --- |
+| macOS 用 Command 点击、Windows/Linux 用 Ctrl 点击选择 A 和 B。支持并排查看、左侧 A/B 切换、按住 `Space` 临时显示参考图、联动缩放和平移，以及浏览器真正全屏。 | 在图片或视频旁以 Markdown、纯文本或格式化 JSON 查看同名 `.txt`。按 `E` 开始编辑，使用 `Command+S` / `Ctrl+S` 保存；切图、外部文件变化和未保存草稿均有保护。 |
+
+同时支持相机 RAW、图片／视频混合目录、大型 Gallery 虚拟列表、视频按需播放、浏览器全屏，以及减少 Remote SSH 传输的主机端预览。
 
 ## 界面预览
 
-### Gallery 总览
+### 双图并排对比
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Xingfu-Yi/vscode-image-caption-gallery/main/docs/images/gallery-overview.jpg" alt="Image Caption Gallery 可调节图片数据集 Gallery 总览" width="100%">
+  <img src="https://raw.githubusercontent.com/Xingfu-Yi/vscode-image-caption-gallery/main/docs/images/two-image-comparison.png" alt="Image Caption Gallery 将来源图 A 与参考图 B 并排对比并联动视角" width="100%">
 </p>
 
-### 图片与 Markdown Caption
+### 编辑同名 TXT Caption
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Xingfu-Yi/vscode-image-caption-gallery/main/docs/images/gallery-detail-zh.jpg" alt="Image Caption Gallery 中文 Markdown Caption 预览" width="100%">
+  <img src="https://raw.githubusercontent.com/Xingfu-Yi/vscode-image-caption-gallery/main/docs/images/gallery-detail-zh.jpg" alt="Image Caption Gallery 同名 TXT Caption 编辑与保存界面" width="100%">
 </p>
 
-### Caption 编辑状态
+### 在图片旁查看 Markdown Caption
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Xingfu-Yi/vscode-image-caption-gallery/main/docs/images/gallery-detail-en.jpg" alt="Image Caption Gallery 同名 TXT Caption 编辑与保存界面" width="100%">
+  <img src="https://raw.githubusercontent.com/Xingfu-Yi/vscode-image-caption-gallery/main/docs/images/gallery-detail-en.jpg" alt="Image Caption Gallery 在图片旁渲染 Markdown Caption" width="100%">
+</p>
+
+### 浏览整个数据集
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Xingfu-Yi/vscode-image-caption-gallery/main/docs/images/gallery-overview.jpg" alt="Image Caption Gallery 可调节图片与视频数据集 Gallery 总览" width="100%">
 </p>
 
 ## 主要功能
 
 - 从 VS Code 资源管理器右键打开目录、图片或视频。
 - macOS 使用 `Command+Option+G`（`⌘⌥G`），Windows/Linux 使用 `Ctrl+Alt+G` 快速启动。
+- 双图并排对比，支持联动／独立缩放与平移、即时 A/B 切换、按住空格查看参考图及浏览器全屏。
 - 递归发现 `.jpg`、`.jpeg`、`.png`、`.webp`、`.gif`、`.bmp`、`.avif`，以及 `.dng`、`.cr2`、`.cr3`、`.nef`、`.arw` 等相机 RAW 图片。
 - 将 Gallery 缩略图大小从 96 px 连续调整到 480 px。
 - 按文件名或相对路径搜索图片。
-- 显式进入 Edit 模式后，可编辑已有的同名 `.txt` Caption，也可新建缺失的 Caption。
+- 查看、编辑或新建同名 `.txt` Caption；在详情页按 `E` 可直接进入 Edit 模式并聚焦编辑框。
 - 默认使用 Markdown 渲染，也可切换为 Raw 原始文本或格式化 JSON。
 - 使用 `Command+S` / `Ctrl+S` 保存，使用 `Escape` 取消编辑。
 - 草稿未保存时，切图、返回 Gallery 或隐藏 Text 都会先询问保存、放弃还是继续编辑。
@@ -54,6 +69,21 @@
 - 在同一个 Gallery 混合浏览 MP4、WebM、MOV、AVI、MKV 等视频和图片，使用原生播放、进度、音量及全屏控制。
 - 打开视频详情时按需加载，切换文件或返回 Gallery 时停止播放。
 
+在图片／视频卡片、媒体预览或文件名上**右键或触控板双指点击**，选择 **复制文件路径／Copy File Path**，即可复制原始文件在主机上的绝对路径；Remote SSH 下复制服务器路径。对比和浏览器全屏同样支持，左侧显示参考图副本时复制 B 的路径。Caption 保留原有文本编辑菜单；macOS 在 Gallery 中 Ctrl 点击仍用于对比选择。
+
+## 双图对比
+
+在 Gallery 中按住 Ctrl（Windows/Linux）或 ⌘ Command（macOS）依次点击两张**图片**，第一张为左侧 A，第二张为右侧参考 B，选满两张后先保留 A/B 选中标记约 0.35 秒，再自动进入对比。macOS 的 Ctrl 点击也可使用，不弹出冲突菜单。普通单击仍进入详情页，视频不参与对比。
+
+- 点击顶栏的 **左侧 A／左侧 B**，在 **A｜B** 和 **B｜B** 之间切换。右侧参考图始终保留，中间分隔线上不再放置切换按钮。
+- **按住空格**临时在左侧显示 B；松开后恢复之前的左图选择。失焦或隐藏页面会清除按住状态。
+- 捏合或 Ctrl/Command + 滚轮缩放，拖动或双指滚动平移。默认联动适合窗口的相对倍率和归一化中心；点击**独立**可分别调整，双击图片恢复适合窗口。保持宽高比，不自动配准或裁剪。
+- 点击**全屏**或按 **F**，浏览器继承两张图片、预览设置、左右视角和切换状态；在浏览器中再次点击全屏进入真正全屏。控制栏空闲两秒隐藏，Esc 退出全屏后仍留在浏览器对比页。
+- 两侧顶栏直接显示当前图片的原图分辨率，悬停可查看完整路径及原图／预览尺寸。
+- VS Code 对比页按 **Esc** 返回 Gallery，保留滚动位置和 A/B 选中标记；在 Gallery 再按一次 **Esc** 清空选择，长按不会误清空。Ctrl/⌘ 再次点击已选图片可取消，工具栏 **×** 清空选择。搜索变化清空选择，刷新只剔除已不存在的图片。
+
+对比期间不读取 Caption，也不修改原有 Caption 偏好。A、B 和左侧 B 副本均完成解码后才启用切换，就绪切换不再请求预览或重新解码。三份图片计入 128 MiB 解码缓存估算，先淘汰无关缓存；主动加载的超大原图或动画可能超出估算，但不会静默降低画质或去掉动画。透明度和 RAW 沿用现有主机预览流程；本次不增加动画帧同步。加载失败时按侧提供重试／加载原图。浏览器与面板之后独立操作，浏览器会话在连续 30 分钟无活动后过期。
+
 ## 安装
 
 直接从 VS Code Marketplace 安装：
@@ -72,7 +102,7 @@ code --install-extension xingfu-yi.image-caption-gallery --force
 2. 在资源管理器中右键点击图片、视频或目录，选择 **Image Caption Gallery**；也可以选中图片后直接按启动快捷键。
 3. 在 Gallery 中调整缩略图大小或搜索图片。
 4. 点击图片或视频，进入左侧媒体、右侧 Text 的并排预览界面。
-5. 点击 **Edit** 编辑 Caption；用 `Command+S` / `Ctrl+S` 或勾号保存，用 `Escape` 或叉号取消。
+5. 按 `E` 或点击 **Edit** 编辑 Caption；用 `Command+S` / `Ctrl+S` 或勾号保存，用 `Escape` 或叉号取消。
 
 如果同名 `.txt` 不存在，Edit 会打开一个空白草稿，保存时自动创建 UTF-8 文件。如果编辑期间文件被其他程序修改，插件会询问是覆盖、重新载入外部版本，还是继续保留当前草稿。
 
@@ -142,7 +172,14 @@ RAW **始终转换为浏览器可显示的预览图**，即使图片小于像素
 
 左右邻图会提前在服务器生成预览、传输并在浏览器解码。浏览器最多保留七张图片，估算解码内存上限 128 MiB，保护当前显示图片，并在后台检查文件是否更新。超预算的原图或动画按需加载，不降低所选画质或改为静态图片；首次冷加载仍可能需要处理与传输时间。SSH 复用现有私有转发，关闭 Gallery 后仍可浏览，断开 SSH 或关闭 VS Code 会停止服务；连续 30 分钟无活动的会话会过期。
 
+### 浏览器 Gallery 导航
+
+独立浏览器的图片、视频和双图对比页都提供 **Gallery／图库** 按钮。必要时会先退出原生全屏，再在同一个浏览器标签页切回打开浏览器时的图片／视频混合结果；点击卡片即可继续打开图片或视频，不必返回 VS Code。浏览器 Gallery 会记住自己的搜索、滚动位置和当前文件。视频返回后仍保留进度、画质、倍速、音量和静音状态。按 **F** 也可让浏览器 Gallery 本身进入真正全屏。
+
+浏览器网格采用虚拟列表，大目录只保留可见行和少量缓冲行的 DOM。列表接口只分页返回元数据；最多同时请求 4 张可见缩略图，离开视口即取消无用任务。图片使用小尺寸静态预览，视频只提取缓存的首帧海报，不创建隐藏播放器，也不预转码整段视频。右键或触控板双指点击仍可复制原始主机路径。浏览器 Gallery 不请求 Caption，也不影响未保存草稿；会话继续使用随机私有令牌、Remote SSH 回环转发和 30 分钟无活动过期机制。
+
 ### 视频浏览
+
 
 支持 MP4、WebM、MOV、M4V、AVI、MKV、MPG/MPEG、WMV、3GP、MTS/M2TS、OGV、VOB、FLV，与图片混合显示。扫描目录只读取文件记录；视频卡片进入可见区域后，仅提取并加载**第一帧的小尺寸 JPEG**，叠加播放标识和格式标签，不在网格中加载视频。首帧提取需要 FFmpeg，结果会缓存。小尺寸 JPEG 直接随结果消息传送，省去 Remote SSH 的第二次资源读取；仅由 Gallery 的可见区域调度控制加载。卡片显示准备中或失败状态，避免一直停留在无说明的占位图。悬停已加载缩略图可查看缓存命中、图片大小、主机排队／提取耗时，以及估算的消息往返与显示耗时；刷新可重试失败项。
 
@@ -163,7 +200,7 @@ Gallery 对分片严格串行追加，中止或关闭不会被当作加载成功
 播放时按当前位置读取远端内容，无需先处理完整视频：
 
 - **原生兼容视频：**通过 HTTP Range 读取所需字节，开放结束位置的范围请求每次最多返回 4 MiB。拖动进度条时，由播放器请求对应位置。
-- **兼容播放：**`imageCaptionGallery.videoCompatibility` 默认为 `"auto"`。FFprobe 读取编码和时长等元数据，不兼容的视频使用 MediaSource 播放 **4 秒一段的 VP8/Vorbis WebM**，由扩展主机上的 FFmpeg 按请求生成。暂停打开时只准备当前片段；播放时最多预取后续两个片段，内存仅保留当前位置附近的少量片段。拖动后直接请求目标片段，取消过期任务，不转换中间内容，也不生成完整兼容副本。
+- **兼容播放：**`imageCaptionGallery.videoCompatibility` 默认为 `"auto"`。FFprobe 读取编码和时长等元数据，不兼容的视频使用 MediaSource 播放 **4 秒一段的 VP8/Vorbis WebM**，由扩展主机上的 FFmpeg 按请求生成。暂停打开时只准备当前片段；播放时同时最多请求两片，让服务器处理与 SSH 传输重叠，MediaSource 仍严格串行追加。提前缓冲目标约为 20 秒观看时间，随倍速增加，最多 48 秒媒体内容；Gallery 已追加的编码数据预算为 32 MiB，另外最多保留两个各不超过 16 MiB 的在途片段。浏览器播放器根据实际片段大小缩小缓冲窗口。拖动后直接请求目标片段，取消过期任务，不转换中间内容，也不生成完整兼容副本。
 
 例如 VS Code 的 Webview 不支持 AAC 音轨，H.264/AAC 的 MP4 会使用兼容片段。参见 [VS Code 官方媒体兼容说明](https://code.visualstudio.com/api/extension-guides/webview#supported-media-formats)。**Convert with FFmpeg** 同样使用短片段；兼容播放失败时可用 **Play original video** 尝试原生播放。首次访问未缓存片段仍可能短暂等待服务器解码和传输。
 
@@ -171,7 +208,7 @@ Gallery 对分片严格串行追加，中止或关闭不会被当作加载成功
 
 切换画质保留进度、倍速、音量和暂停 / 播放状态，不影响 Caption 草稿。每个 Gallery 保留自己的画质选择，新 Gallery 使用 VS Code 默认设置；界面切换不会修改工作区配置。旧版 Gallery 保存的兼容预览默认值会迁移到新的默认设置；旧版 480 / 2160 配置分别迁移为 720p / 2K。顶栏保留原视频尺寸，下方显示实际播放尺寸；小视频会标注“原画”。播放器上方不再常驻兼容提示，加载状态、错误和回退按钮显示在画面下方，详细信息可在设置中查看。图片总像素限制和捏合缩放仍只作用于图片。
 
-需要在**扩展主机**安装 **FFmpeg 和 ffprobe**：本地目录安装在本机，Remote SSH 则安装在**远程服务器**。兼容播放需要 `libvpx` 和 `libvorbis`（或原生 `vorbis`）编码器，**不再依赖 `libmp3lame`**。插件会检查实际可用编码器；使用默认 `ffmpeg` 命令时，也会尝试常见系统路径，避免 PATH 中功能不全的构建遮蔽可用的系统构建。VSIX 不内置或自动下载这些工具。缺少工具时仍尝试原生播放 MP4/WebM/MOV/M4V，卡片保留播放标识，兼容处理会显示明确错误。
+需要在**扩展主机**安装 **FFmpeg 和 ffprobe**：本地目录安装在本机，Remote SSH 则安装在**远程服务器**。兼容播放需要 `libvpx` 和 `libvorbis` 编码器，**不再依赖 `libmp3lame`**。不使用实验性原生 `vorbis` 编码器，因为它可能生成时间戳倒退的 WebM 数据，导致 Chromium 拒绝播放；旧版兼容分片缓存会自动重新生成。插件会检查实际可用编码器；使用默认 `ffmpeg` 命令时，也会尝试常见系统路径，避免 PATH 中功能不全的构建遮蔽可用的系统构建。VSIX 不内置或自动下载这些工具。缺少工具时仍尝试原生播放 MP4/WebM/MOV/M4V，卡片保留播放标识，兼容处理会显示明确错误。
 
 ```json
 {
@@ -183,13 +220,16 @@ Gallery 对分片严格串行追加，中止或关闭不会被当作加载成功
 
 `ffmpegPath` 可填写 PATH 中的命令名或可执行文件绝对路径，`ffprobe` 需位于旁边，含空格的路径无需额外加引号。SSH 请在 **Remote** 设置中配置服务器路径。`videoCompatibility` 设为 `"native"` 可跳过编码检测和兼容处理，原生播放失败时仍可手动启用兼容播放。
 
-媒体服务仅监听扩展主机的回环地址，使用可撤销的随机资源地址，Remote SSH 下由 VS Code 私下转发，无需手动开放公网端口。播放同时最多运行两个 FFmpeg 任务；首帧提取使用独立、按 CPU 限制的 1–4 个任务，避免被其他 Gallery 的播放持续占满。首帧解码、缩放和编码各使用单线程，重复任务合并。先用有限探测快速提取，特殊容器失败时回退一次常规探测，不扫描视频挑选代表画面。缓存命中在重启后也会跳过 FFmpeg 检测。已生成片段和首帧存于独立的 **512 MiB LRU 缓存**，按源文件路径、修改时间、大小、工具和播放配置区分；可见网格中的首帧在释放前受保护。原视频不修改。兼容播放使用第一条视频和音频流，不保留内嵌字幕，目前不自动调整码率。
+媒体服务仅监听扩展主机的回环地址，使用可撤销的随机资源地址，Remote SSH 下由 VS Code 私下转发，无需手动开放公网端口。播放同时最多运行两个 FFmpeg 任务，兼容分片的输入解码器最多使用四个线程，在显式预览旋转、缩放前先降至既有输出帧率 30 fps；首帧提取使用独立、按 CPU 限制的 1–4 个任务，避免被其他 Gallery 的播放持续占满。首帧解码、缩放和编码各使用单线程，重复任务合并。先用有限探测快速提取，特殊容器失败时回退一次常规探测，不扫描视频挑选代表画面。缓存命中在重启后也会跳过 FFmpeg 检测。已生成片段和首帧存于独立的 **512 MiB LRU 缓存**，按源文件路径、修改时间、大小、工具和播放配置区分；可见网格中的首帧在释放前受保护。原视频不修改。兼容播放使用第一条视频和音频流，不保留内嵌字幕，目前不自动调整码率。
+
+选择 1080p 仍需解码原始视频，4K／60 fps 源文件并不会直接变成低成本输入；短片段还可能从前一个关键帧重新解码。如果持续处理加传输跟不上播放，降低画质或倍速可减轻负担，预加载不能保证所有源文件瞬间播放。视频诊断新增请求、主机排队、编码、缓存和剩余缓冲耗时；主机计时不包含 SSH 传输，可与完整请求耗时对照。
 
 ### 快捷键
 
 | 操作 | macOS | Windows / Linux |
 | --- | --- | --- |
 | 打开 Image Caption Gallery | `Command+Option+G`（`⌘⌥G`） | `Ctrl+Alt+G` |
+| 开始编辑当前 Caption | `E` | `E` |
 | 编辑时保存 Caption | `Command+S` | `Ctrl+S` |
 | 取消 Caption 编辑 | `Escape` | `Escape` |
 | 上一个 / 下一个文件 | `←` / `→` | `←` / `→` |

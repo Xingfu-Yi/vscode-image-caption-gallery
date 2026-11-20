@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 import * as vscode from 'vscode';
 import { decodeCaption, encodeCaption } from './captionCodec';
 import { settingsHtml } from './settingsHtml';
-import type { BrowserPlaybackState } from './browserPlayer';
+import { normalizePlaybackState, type BrowserPlaybackState } from './browserPlayer';
+import { BrowserGallery } from './browserGallery';
 import { BrowserImages } from './browserImages';
 import { PreviewService } from './previewService';
 import { normalizeVideoQuality, VideoService } from './videoService';
@@ -48,6 +49,8 @@ interface WebviewMessage {
   playback?: Partial<BrowserPlaybackState>;
   diagnostics?: unknown;
   search?: string;
+  ids?: string[];
+  comparison?: unknown;
 }
 
 const MISSING_CAPTION_REVISION = 'missing';
@@ -75,7 +78,21 @@ export function activate(context: vscode.ExtensionContext): void {
     return { filePath: uri.fsPath, mtime: stat.mtime, size: stat.size };
   });
   videos.attachImageBrowser(browserImages);
-  context.subscriptions.push(browserImages, previews, videos);
+  const browserGallery = new BrowserGallery({ previews, videos,
+    source: async (id) => { const uri = vscode.Uri.parse(id), stat = await vscode.workspace.fs.stat(uri); return { filePath: uri.fsPath, mtime: stat.mtime, size: stat.size }; },
+    filePath: id => vscode.Uri.parse(id).fsPath,
+    open: async (record, records, gallery, settings, input) => {
+      if (record.kind === 'video') {
+        const state = normalizePlaybackState({ ...input, quality: input?.quality ?? settings.videoMaxHeight });
+        const token = await videos.createBrowserPlayer(record.id, record.name, { mode: 'auto', ffmpegPath: settings.ffmpegPath }, state, gallery);
+        return { path: `/v1/${token}/player`, release: () => videos.releaseBrowser(token) };
+      }
+      const token = browserImages.create(records.filter(record => record.kind === 'image'), record.id, settings.resolution, vscode.env.language, gallery);
+      return { path: `/images/${token}/viewer`, release: () => browserImages.release(token) };
+    },
+  });
+  videos.attachGallery(browserGallery); browserImages.attachGallery(browserGallery);
+  context.subscriptions.push(browserGallery, browserImages, previews, videos);
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
     if (event.affectsConfiguration('imageCaptionGallery.previewExecutionMode')) {
       previews.setBackend(vscode.workspace.getConfiguration('imageCaptionGallery').get<string>('previewExecutionMode', 'process'));
@@ -91,7 +108,7 @@ export function activate(context: vscode.ExtensionContext): void {
         const imageUri = resolveSelectedMedia(selectedUri);
         if (imageUri) {
           const root = imageUri.with({ path: path.posix.dirname(imageUri.path) });
-          await openGallery(context, previews, videos, browserImages, root, imageUri);
+          await openGallery(context, previews, videos, browserImages, browserGallery, root, imageUri);
           return;
         }
 
@@ -100,7 +117,7 @@ export function activate(context: vscode.ExtensionContext): void {
           return;
         }
 
-        await openGallery(context, previews, videos, browserImages, root);
+        await openGallery(context, previews, videos, browserImages, browserGallery, root);
       },
     ),
   );
@@ -154,6 +171,7 @@ async function openGallery(
   previews: PreviewService,
   videos: VideoService,
   browserImages: BrowserImages,
+  browserGallery: BrowserGallery,
   root: vscode.Uri,
   initialImageUri?: vscode.Uri,
 ): Promise<void> {
@@ -219,6 +237,17 @@ async function openGallery(
 
   let imageById = new Map<string, vscode.Uri>();
   let galleryRecords: MediaRecord[] = initialImageUri ? [toMediaRecord(root, initialImageUri)] : [];
+  const createBrowserGallery = (message: WebviewMessage, selected: string, resolution?: number) => {
+    const query = typeof message.search === 'string' ? message.search.slice(0, 4096).trim().toLocaleLowerCase() : '';
+    const records = galleryRecords.filter(record => !query || record.relativePath.toLocaleLowerCase().includes(query));
+    const config = vscode.workspace.getConfiguration('imageCaptionGallery', root);
+    const executable = typeof message.ffmpegPath === 'string' && message.ffmpegPath.length > 0 && message.ffmpegPath.length <= 4096 && !message.ffmpegPath.includes('\0') ? message.ffmpegPath : config.get<string>('ffmpegPath', 'ffmpeg');
+    const token = browserGallery.create(records, selected, {
+      resolution: resolution ?? (typeof message.resolution === 'number' ? message.resolution : config.get<number>('maxPreviewResolution', 2048)),
+      videoMaxHeight: normalizeVideoQuality(message.playback?.quality ?? message.videoMaxHeight ?? config.get<number>('videoPreviewMaxHeight', 1440)), ffmpegPath: executable, search: typeof message.search === 'string' ? message.search.slice(0, 4096).trim() : '',
+    }, vscode.env.language);
+    return { token, records, link: browserGallery.link(token, selected)! };
+  };
   let pendingInitialImageId = initialImageUri?.toString();
 
   const sendImages = async (): Promise<void> => {
@@ -361,6 +390,36 @@ async function openGallery(
         return;
       }
 
+      if (message.type === 'openComparisonInBrowser' && message.requestId) {
+        let token: string | undefined, galleryToken: string | undefined, error: string | undefined;
+        try {
+          const ids = message.ids;
+          if (!Array.isArray(ids) || ids.length !== 2 || ids[0] === ids[1]
+            || ids.some(id => typeof id !== 'string' || !imageById.has(id) || isVideo(imageById.get(id)!.path))) {
+            throw new Error('Select two different images from this Gallery.');
+          }
+          const records = ids.map(id => galleryRecords.find(record => record.id === id)!);
+          if (records.some(record => !record)) { throw new Error('The selected images are no longer in this Gallery.'); }
+          const configured = vscode.workspace.getConfiguration('imageCaptionGallery', root).get<number>('maxPreviewResolution', 2048);
+          const resolution = typeof message.resolution === 'number' ? message.resolution : configured;
+          const gallery = createBrowserGallery(message, ids[0], resolution); galleryToken = gallery.token;
+          token = browserImages.createComparison(records, resolution, vscode.env.language, message.comparison, gallery.link);
+          const url = new URL(videoBase); url.pathname = `${url.pathname.replace(/\/$/, '')}/images/${token}/viewer`;
+          if (!await vscode.env.openExternal(vscode.Uri.parse(url.toString()))) { throw new Error('Could not open the browser comparison.'); }
+        } catch (failure) { if (token) { browserImages.release(token); } if (galleryToken) browserGallery.release(galleryToken); error = failure instanceof Error ? failure.message : String(failure); }
+        if (!disposed) { await panel.webview.postMessage({ type: 'browserComparisonOpened', requestId: message.requestId, ids: message.ids, opened: !error, error }); }
+        return;
+      }
+      if (message.type === 'copyFilePath' && message.requestId) {
+        const uri = typeof message.id === 'string' ? imageById.get(message.id) : undefined;
+        let error: string | undefined;
+        try {
+          if (!uri) { throw new Error('This file is no longer in this Gallery.'); }
+          await vscode.env.clipboard.writeText(uri.fsPath);
+        } catch (failure) { error = failure instanceof Error ? failure.message : String(failure); }
+        if (!disposed) { await panel.webview.postMessage({ type: 'filePathCopied', id: message.id, requestId: message.requestId, copied: !error, error }); }
+        return;
+      }
       const imageId = message.id;
       const imageUri = imageId ? imageById.get(imageId) : undefined;
       if (!imageId || !imageUri) {
@@ -374,29 +433,29 @@ async function openGallery(
         return;
       }
       if (message.type === 'openImagesInBrowser' && message.requestId && !isVideo(imageUri.path)) {
-        let token: string | undefined, error: string | undefined;
+        let token: string | undefined, galleryToken: string | undefined, error: string | undefined;
         try {
-          const query = typeof message.search === 'string' ? message.search.slice(0, 4096).trim().toLocaleLowerCase() : '';
-          const records = galleryRecords.filter(record => record.kind === 'image' && (!query || record.relativePath.toLocaleLowerCase().includes(query)));
           const configured = vscode.workspace.getConfiguration('imageCaptionGallery', root).get<number>('maxPreviewResolution', 2048);
           const resolution = message.original ? 0 : typeof message.resolution === 'number' ? message.resolution : configured;
-          token = browserImages.create(records, imageId, resolution, vscode.env.language);
+          const gallery = createBrowserGallery(message, imageId, resolution); galleryToken = gallery.token;
+          token = browserImages.create(gallery.records.filter(record => record.kind === 'image'), imageId, resolution, vscode.env.language, gallery.link);
           const url = new URL(videoBase); url.pathname = `${url.pathname.replace(/\/$/, '')}/images/${token}/viewer`;
           if (!await vscode.env.openExternal(vscode.Uri.parse(url.toString()))) { throw new Error('Could not open the browser image viewer.'); }
-        } catch (failure) { if (token) { browserImages.release(token); } error = failure instanceof Error ? failure.message : String(failure); }
+        } catch (failure) { if (token) { browserImages.release(token); } if (galleryToken) browserGallery.release(galleryToken); error = failure instanceof Error ? failure.message : String(failure); }
         if (!disposed) { await panel.webview.postMessage({ type: 'browserImagesOpened', id: imageId, requestId: message.requestId, opened: !error, error }); }
         return;
       }
       if (message.type === 'openVideoInBrowser' && message.requestId && isVideo(imageUri.path)) {
-        let token: string | undefined, error: string | undefined;
+        let token: string | undefined, galleryToken: string | undefined, error: string | undefined;
         try {
           const config = vscode.workspace.getConfiguration('imageCaptionGallery', root);
           const executable = typeof message.ffmpegPath === 'string' && message.ffmpegPath.length > 0 && message.ffmpegPath.length <= 4096 && !message.ffmpegPath.includes('\0') ? message.ffmpegPath : config.get<string>('ffmpegPath', 'ffmpeg');
-          token = await videos.createBrowserPlayer(imageId, path.posix.basename(imageUri.path), { mode: 'auto', ffmpegPath: executable }, message.playback || {});
-          if (disposed) { videos.releaseBrowser(token); return; }
+          const gallery = createBrowserGallery(message, imageId); galleryToken = gallery.token;
+          token = await videos.createBrowserPlayer(imageId, path.posix.basename(imageUri.path), { mode: 'auto', ffmpegPath: executable }, message.playback || {}, gallery.link);
+          if (disposed) { videos.releaseBrowser(token); browserGallery.release(galleryToken); return; }
           const url = new URL(videoUrl(token, 'player')); url.searchParams.set('quality', String(normalizeVideoQuality(message.playback?.quality)));
           if (!await vscode.env.openExternal(vscode.Uri.parse(url.toString()))) { throw new Error('Could not open the browser player.'); }
-        } catch (failure) { if (token) { videos.releaseBrowser(token); } error = failure instanceof Error ? failure.message : String(failure); }
+        } catch (failure) { if (token) { videos.releaseBrowser(token); } if (galleryToken) browserGallery.release(galleryToken); error = failure instanceof Error ? failure.message : String(failure); }
         if (!disposed) { await panel.webview.postMessage({ type: 'browserVideoOpened', id: imageId, requestId: message.requestId, opened: !error, error }); }
         return;
       }
@@ -704,9 +763,11 @@ function sidecarUri(imageUri: vscode.Uri): vscode.Uri {
 
 function relativePath(root: vscode.Uri, file: vscode.Uri): string {
   const rootPath = root.path.endsWith('/') ? root.path : `${root.path}/`;
-  return decodeURIComponent(file.path.startsWith(rootPath)
+  // Uri.path is already decoded. Decoding again breaks literal '%' filenames
+  // and changes names such as '%20' or '%2F' into spaces or path separators.
+  return file.path.startsWith(rootPath)
     ? file.path.slice(rootPath.length)
-    : file.path);
+    : file.path;
 }
 
 function readZoomSensitivity(root: vscode.Uri): number {
@@ -718,8 +779,8 @@ function getHtml(context: vscode.ExtensionContext, webview: vscode.Webview, root
   const nonce = crypto.randomBytes(16).toString('base64');
   // Inline trusted bundled assets once: SSH need not fetch CSS and three scripts
   // separately, and the initial document never flashes an unstyled editor.
-  const styles = readFileSync(vscode.Uri.joinPath(context.extensionUri, 'media', 'style.css').fsPath, 'utf8').replaceAll('</style', '<\\/style');
-  const scripts = ['galleryGrid.js', 'videoStream.js', 'main.js'].map((file) => readFileSync(vscode.Uri.joinPath(context.extensionUri, 'media', file).fsPath, 'utf8')).join('\n;\n').replaceAll('</script', '<\\/script');
+  const styles = ['style.css', 'compareView.css', 'fileContextMenu.css'].map(file => readFileSync(vscode.Uri.joinPath(context.extensionUri, 'media', file).fsPath, 'utf8')).join('\n').replaceAll('</style', '<\\/style');
+  const scripts = ['galleryGrid.js', 'videoStream.js', 'fileContextMenu.js', 'compareView.js', 'main.js'].map((file) => readFileSync(vscode.Uri.joinPath(context.extensionUri, 'media', file).fsPath, 'utf8')).join('\n;\n').replaceAll('</script', '<\\/script');
   const defaultThumbnailSize = vscode.workspace
     .getConfiguration('imageCaptionGallery', root)
     .get<number>('defaultThumbnailSize', 220);
@@ -755,6 +816,8 @@ function getHtml(context: vscode.ExtensionContext, webview: vscode.Webview, root
       <input id="search" class="search" type="search" placeholder="Search media…" aria-label="Search images and videos">
       <span id="count" class="muted" role="status" aria-live="polite">0 images</span>
       <button id="refresh" class="icon-button" title="Refresh" aria-label="Refresh">↻</button>
+      <span id="comparison-selection" class="comparison-selection hidden"><button id="compare-selected" class="button" type="button" disabled></button><button id="clear-comparison" class="icon-button" type="button" aria-label="${t('Clear image selection', '清空图片选择')}">×</button></span>
+      <button id="comparison-help" class="icon-button" type="button" aria-label="${t('How to compare two images', '如何对比两张图片')}" title="${t('Ctrl / ⌘ click two images to compare', 'Ctrl / ⌘ 点击两张图片进入对比')}">A/B</button>
       ${settingsButton('gallery-settings')}
     </header>
     <main id="gallery" class="gallery" aria-label="Media gallery"></main>
@@ -771,7 +834,7 @@ function getHtml(context: vscode.ExtensionContext, webview: vscode.Webview, root
       <div class="text-header">
         <span id="editing-label" class="editing-label hidden">Editing .txt</span>
         <span id="edit-state" class="edit-state hidden" aria-live="polite">Unsaved</span>
-        <button id="edit-caption" class="button header-action" type="button">Edit</button>
+        <button id="edit-caption" class="button header-action" type="button" title="${t('Edit caption (E)', '编辑 Caption（E）')}" aria-label="${t('Edit caption (E)', '编辑 Caption（E）')}">Edit</button>
         <div id="edit-actions" class="edit-actions hidden">
           <button id="cancel-edit" class="icon-button" type="button" title="Discard edits (Escape)" aria-label="Discard edits">×</button>
           <button id="save-edit" class="icon-button primary-action" type="button" title="Save caption (Control or Command S)" aria-label="Save caption">✓</button>

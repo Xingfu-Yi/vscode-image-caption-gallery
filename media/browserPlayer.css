@@ -6,8 +6,9 @@ video { display: block; width: 100%; flex: 1; min-height: 0; object-fit: contain
 #controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; background: #202020; transition: opacity .18s; }
 #title { flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 label { display: inline-flex; align-items: center; gap: 6px; }
-button, select { font: inherit; color: inherit; background: #343434; border: 1px solid #555; border-radius: 5px; padding: 7px 10px; }
-button { cursor: pointer; } button:hover { background: #444; } button:focus-visible, select:focus-visible { outline: 2px solid #5caefc; }
+button, select, #gallery-link { font: inherit; color: inherit; background: #343434; border: 1px solid #555; border-radius: 5px; padding: 7px 10px; }
+button, #gallery-link { cursor: pointer; } button:hover, #gallery-link:hover { background: #444; } button:focus-visible, select:focus-visible, #gallery-link:focus-visible { outline: 2px solid #5caefc; }
+#gallery-link { text-decoration: none; white-space: nowrap; }
 #status { color: #ddd; overflow-wrap: anywhere; } #status.error { color: #ff957f; }
 #dimensions { color: #aaa; font-size: 12px; } [hidden] { display: none !important; }
 #player:fullscreen #controls { position: absolute; bottom: 64px; left: 12px; right: 12px; border-radius: 6px; background: #222e; z-index: 2; }

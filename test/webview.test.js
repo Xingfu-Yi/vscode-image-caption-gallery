@@ -5,12 +5,278 @@ const path = require('node:path');
 const { JSDOM } = require('jsdom');
 const { createHost } = require('./helpers/host');
 const records = ['a', 'b'].map((id) => ({ id, name: `${id}.jpg`, relativePath: `${id}.jpg` }));
+const comparisonTick = async () => { for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve)); };
+function clickComparisonSelection(ui, id, modifiers = { metaKey: true }) {
+  ui.window.document.querySelector(`[data-media-id="${id}"]`).dispatchEvent(new ui.window.MouseEvent('click', { bubbles: true, cancelable: true, ...modifiers }));
+}
+function selectComparison(ui, id, modifiers = { metaKey: true }) {
+  clickComparisonSelection(ui, id, modifiers);
+  // Component tests use the explicit entry button; scheduling is tested below
+  // with a controlled clock instead of making every test wait in real time.
+  if (!ui.window.document.querySelector('#compare-selected').disabled) ui.click('#compare-selected');
+}
+async function readyComparison(ui, width = 100, height = 60) {
+  ui.window.HTMLImageElement.prototype.decode = async function () {
+    if (!this.naturalWidth) Object.defineProperties(this, { naturalWidth: { value: width, configurable: true }, naturalHeight: { value: height, configurable: true } });
+  };
+  for (const pending of ui.requests.filter(m => m.type === 'loadPreview' && m.detail).slice(-2)) {
+    ui.send({ ...pending, type: 'preview', source: `https://preview.test/${pending.id}`, width, height, originalWidth: width * 10, originalHeight: height * 10, frameCount: 1 });
+    const target = ui.imageFor(pending.requestId);
+    Object.defineProperties(target, { naturalWidth: { value: width, configurable: true }, naturalHeight: { value: height, configurable: true } });
+    target.dispatchEvent(new ui.window.Event('load'));
+  }
+  await comparisonTick();
+}
 
-async function setup(t, settings, persisted = {}, media = records) {
+test('comparison selection orders A/B, excludes videos, preserves scroll and selection on exit and never requests captions', async t => {
+  const ui = await setup(t, { showCaption: true }, {}, [...records, { id: 'clip', kind: 'video', name: 'clip.mp4', relativePath: 'clip.mp4' }]), doc = ui.window.document;
+  const viewport = doc.querySelector('#gallery-view'); viewport.scrollTop = 125;
+  selectComparison(ui, 'clip'); assert.equal(doc.querySelector('.compare-view'), null); assert.equal(ui.last('loadVideo'), undefined);
+  selectComparison(ui, 'b'); assert.equal(doc.querySelector('[data-media-id=b] .comparison-marker').textContent, 'A');
+  selectComparison(ui, 'b'); assert.equal(doc.querySelectorAll('.comparison-marker').length, 0);
+  selectComparison(ui, 'b'); selectComparison(ui, 'a', { ctrlKey: true });
+  assert.ok(doc.querySelector('.compare-view')); assert.deepEqual(ui.requests.filter(m => m.type === 'loadPreview' && m.detail).map(m => m.id), ['b', 'a']);
+  await readyComparison(ui); assert.equal(doc.querySelector('.compare-view').dataset.ready, 'true');
+  assert.equal(doc.querySelector('.compare-filename').textContent, 'A · b.jpg');
+  assert.equal(ui.requests.some(m => m.type === 'loadCaption'), false); assert.equal(ui.state().textPaneHidden, false);
+  doc.dispatchEvent(new ui.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(doc.querySelector('.compare-view'), null); assert.equal(viewport.scrollTop, 125);
+  assert.equal(doc.querySelectorAll('.comparison-marker').length, 2);
+  assert.equal(doc.querySelector('[data-media-id=b] .comparison-marker').textContent, 'A');
+  assert.equal(doc.querySelector('[data-media-id=a] .comparison-marker').textContent, 'B');
+  assert.equal(doc.querySelector('#compare-selected').disabled, false);
+  assert.equal(doc.querySelector('#comparison-selection').classList.contains('hidden'), false);
+  ui.click('#compare-selected'); await comparisonTick(); assert.equal(doc.querySelector('.compare-view').dataset.ready, 'true');
+  assert.equal(ui.requests.filter(m => m.type === 'loadPreview' && m.detail).length, 2, 'reopening retains pinned decoded entries');
+  ui.click('[data-action=back]');
+  doc.dispatchEvent(new ui.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  selectComparison(ui, 'a');
+  assert.equal(doc.querySelector('[data-media-id=a] .comparison-marker').textContent, 'A');
+  const search = doc.querySelector('#search'); search.value = 'a'; search.dispatchEvent(new ui.window.Event('input'));
+  assert.equal(doc.querySelectorAll('.comparison-marker').length, 0);
+});
+
+test('comparison headers show original resolution and follow displayed A/B through Space and the toolbar toggle', async t => {
+  const ui = await setup(t), doc = ui.window.document;
+  selectComparison(ui, 'a'); selectComparison(ui, 'b');
+  assert.equal(doc.querySelector('.compare-resolution').hidden, true);
+  ui.window.HTMLImageElement.prototype.decode = async function () {};
+  for (const pending of ui.requests.filter(m => m.type === 'loadPreview' && m.detail)) {
+    const dims = pending.id === 'a' ? { width: 1365, height: 720, originalWidth: 4096, originalHeight: 2160 } : { width: 720, height: 1365, originalWidth: 2160, originalHeight: 4096 };
+    ui.send({ ...pending, type: 'preview', source: `https://preview.test/${pending.id}`, ...dims, frameCount: 1 });
+    const image = ui.imageFor(pending.requestId);
+    Object.defineProperties(image, { naturalWidth: { value: dims.width, configurable: true }, naturalHeight: { value: dims.height, configurable: true } });
+    image.dispatchEvent(new ui.window.Event('load'));
+  }
+  await comparisonTick();
+  const dimensions = () => [...doc.querySelectorAll('.compare-resolution')].map(element => element.textContent);
+  assert.deepEqual(dimensions(), ['4096 × 2160', '2160 × 4096']);
+  const count = ui.requests.length;
+  doc.dispatchEvent(new ui.window.KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true }));
+  assert.deepEqual(dimensions(), ['2160 × 4096', '2160 × 4096']);
+  assert.match(doc.querySelector('.compare-filename').textContent, /reference copy/);
+  doc.dispatchEvent(new ui.window.KeyboardEvent('keyup', { code: 'Space', key: ' ', bubbles: true }));
+  assert.deepEqual(dimensions(), ['4096 × 2160', '2160 × 4096']);
+  ui.click('.compare-toggle'); assert.deepEqual(dimensions(), ['2160 × 4096', '2160 × 4096']);
+  ui.click('.compare-toggle'); assert.deepEqual(dimensions(), ['4096 × 2160', '2160 × 4096']);
+  assert.equal(ui.requests.length, count);
+  ui.send({ type: 'previewConfigurationChanged', resolution: 512 });
+  assert.equal(doc.querySelector('.compare-resolution').hidden, true, 'invalidated dimensions stay hidden until the new source is ready');
+});
+
+test('comparison original-mode headers fall back to decoded dimensions when metadata is absent', async t => {
+  const ui = await setup(t, { maxPreviewResolution: 0 }), doc = ui.window.document;
+  selectComparison(ui, 'a'); selectComparison(ui, 'b');
+  ui.window.HTMLImageElement.prototype.decode = async function () {};
+  for (const pending of ui.requests.filter(m => m.type === 'loadPreview' && m.detail)) {
+    ui.send({ ...pending, type: 'preview', source: `https://original.test/${pending.id}` });
+    const image = ui.imageFor(pending.requestId);
+    Object.defineProperties(image, { naturalWidth: { value: 2560, configurable: true }, naturalHeight: { value: 1440, configurable: true } });
+    image.dispatchEvent(new ui.window.Event('load'));
+  }
+  await comparisonTick();
+  assert.deepEqual([...doc.querySelectorAll('.compare-resolution')].map(element => element.textContent), ['2560 × 1440', '2560 × 1440']);
+});
+
+test('comparison hot swaps preserve the right image, cameras and mouse latch across Space, repeat, blur and visibility', async t => {
+  const ui = await setup(t), doc = ui.window.document;
+  selectComparison(ui, 'a'); selectComparison(ui, 'b'); await readyComparison(ui);
+  const root = doc.querySelector('.compare-view'), right = doc.querySelector('[data-side="1"] img'), left = doc.querySelector('[data-side="0"] img'), copy = doc.querySelector('.compare-reference-copy');
+  assert.notEqual(copy, right); assert.equal(copy.src, right.src);
+  assert.ok(doc.querySelector('.compare-toolbar .compare-toggle'));
+  assert.equal(doc.querySelector('.compare-panels + .compare-toggle'), null, 'no overlay toggle covers the image divider');
+  assert.equal(doc.querySelector('.compare-toggle').textContent, 'Left: A');
+  const count = ui.requests.length, rightStyle = right.style.cssText;
+  const key = (type, repeat = false) => doc.dispatchEvent(new ui.window.KeyboardEvent(type, { key: ' ', code: 'Space', bubbles: true, cancelable: true, repeat }));
+  key('keydown'); key('keydown', true); ui.click('.compare-toggle'); assert.equal(root.dataset.showingReference, 'true'); key('keyup'); assert.equal(root.dataset.showingReference, 'false', 'mouse input while Space is held cannot overwrite the pre-keydown state');
+  ui.click('.compare-toggle'); assert.equal(root.dataset.showingReference, 'true'); assert.equal(doc.querySelector('.compare-toggle').textContent, 'Left: B');
+  key('keydown'); key('keyup'); assert.equal(root.dataset.showingReference, 'true', 'Space restores the existing latched state');
+  ui.click('.compare-toggle'); key('keydown'); ui.window.dispatchEvent(new ui.window.Event('blur')); assert.equal(root.dataset.showingReference, 'false');
+  key('keydown'); Object.defineProperty(doc, 'hidden', { value: true, configurable: true }); doc.dispatchEvent(new ui.window.Event('visibilitychange')); assert.equal(root.dataset.showingReference, 'false');
+  assert.equal(doc.querySelector('[data-side="1"] img'), right); assert.equal(right.style.cssText, rightStyle); assert.equal(left.hidden, false);
+  assert.equal(ui.requests.length, count, 'prepared switches require no messages, network requests or decoding');
+});
+
+test('comparison cameras link normalized zoom and pan, work independently, fit on double click and transfer to browser', async t => {
+  const ui = await setup(t), doc = ui.window.document;
+  selectComparison(ui, 'a'); selectComparison(ui, 'b'); await readyComparison(ui);
+  const stages = [...doc.querySelectorAll('.compare-stage')]; stages.forEach(stage => { stage.getBoundingClientRect = () => ({ width: 400, height: 300, left: 0, top: 0 }); });
+  const wheel = (side, extra) => stages[side].dispatchEvent(new ui.window.WheelEvent('wheel', { deltaY: -40, clientX: 200, clientY: 150, ctrlKey: true, cancelable: true, ...extra }));
+  wheel(0);
+  for (const [type, x] of [['pointerdown', 200], ['pointermove', 240], ['pointerup', 240]]) stages[0].dispatchEvent(new ui.window.MouseEvent(type, { button: 0, clientX: x, clientY: 150 }));
+  ui.click('[data-action=fullscreen]'); let request = ui.last('openComparisonInBrowser');
+  assert.deepEqual(Array.from(request.ids), ['a', 'b']); assert.deepEqual(request.comparison.views[0], request.comparison.views[1]); assert.ok(request.comparison.views[0].zoom > 1);
+  assert.ok(request.comparison.views[0].x < .5, 'dragging right moves both normalized centers left');
+  ui.send({ ...request, type: 'browserComparisonOpened', opened: true });
+  ui.click('[data-action=link]'); wheel(1); wheel(0, { ctrlKey: false, deltaX: 20, deltaY: 20 }); ui.click('.compare-toggle');
+  ui.click('[data-action=fullscreen]'); request = ui.last('openComparisonInBrowser'); assert.equal(request.comparison.linked, false); assert.equal(request.comparison.showingReference, true); assert.notDeepEqual(request.comparison.views[0], request.comparison.views[1]);
+  ui.send({ ...request, type: 'browserComparisonOpened', opened: false, error: 'test failure' });
+  assert.equal(doc.querySelector('[data-action=fullscreen]').disabled, false);
+  stages[0].dispatchEvent(new ui.window.MouseEvent('dblclick', { bubbles: true })); ui.click('[data-action=fullscreen]');
+  assert.deepEqual(JSON.parse(JSON.stringify(ui.last('openComparisonInBrowser').comparison.views[0])), { zoom: 1, x: .5, y: .5 });
+});
+
+test('macOS Ctrl pointer/contextmenu/click chooses once; ordinary context menus and simple clicks remain available', async t => {
+  const ui = await setup(t), doc = ui.window.document, card = doc.querySelector('.image-card');
+  card.dispatchEvent(new ui.window.MouseEvent('pointerdown', { button: 0, ctrlKey: true, bubbles: true, cancelable: true }));
+  const context = new ui.window.MouseEvent('contextmenu', { button: 2, ctrlKey: true, cancelable: true }); card.dispatchEvent(context); assert.equal(context.defaultPrevented, true);
+  card.dispatchEvent(new ui.window.MouseEvent('click', { button: 0, ctrlKey: true, cancelable: true }));
+  assert.equal(card.querySelector('.comparison-marker').textContent, 'A');
+  const normalContext = new ui.window.MouseEvent('contextmenu', { button: 2, cancelable: true }); card.dispatchEvent(normalContext); assert.equal(normalContext.defaultPrevented, false);
+  card.click(); assert.equal(doc.querySelector('#detail-view').classList.contains('hidden'), false); assert.equal(ui.last('loadCaption').id, 'a');
+});
+
+test('Command selection consumes the entire pointer gesture even if click arrives later without modifier flags', async t => {
+  const ui = await setup(t), doc = ui.window.document;
+  const select = async id => {
+    const card = doc.querySelector(`[data-media-id="${id}"]`);
+    card.dispatchEvent(new ui.window.MouseEvent('pointerdown', { button: 0, metaKey: true, bubbles: true, cancelable: true }));
+    card.dispatchEvent(new ui.window.MouseEvent('pointerup', { button: 0, bubbles: true }));
+    await new Promise(resolve => setTimeout(resolve, 10));
+    card.dispatchEvent(new ui.window.MouseEvent('click', { button: 0, detail: 1, bubbles: true, cancelable: true }));
+  };
+  await select('a');
+  assert.equal(doc.querySelector('#detail-view').classList.contains('hidden'), true, 'the trailing click must not open image details');
+  assert.equal(doc.querySelector('#gallery-view').classList.contains('hidden'), false);
+  assert.equal(doc.querySelector('[data-media-id=a] .comparison-marker').textContent, 'A');
+  assert.equal(ui.requests.some(m => m.type === 'loadCaption'), false);
+  await select('b'); assert.equal(doc.querySelectorAll('.comparison-marker').length, 2); ui.click('#compare-selected'); assert.ok(doc.querySelector('.compare-view'));
+  assert.deepEqual(ui.requests.filter(m => m.type === 'loadPreview' && m.detail).map(m => m.id), ['a', 'b']);
+});
+
+test('selection does not swallow a following ordinary pointer gesture or keyboard activation', async t => {
+  for (const keyboard of [false, true]) {
+    const ui = await setup(t), card = ui.window.document.querySelector('.image-card');
+    card.dispatchEvent(new ui.window.MouseEvent('pointerdown', { button: 0, ctrlKey: true, cancelable: true }));
+    const context = new ui.window.MouseEvent('contextmenu', { button: 2, cancelable: true }); card.dispatchEvent(context);
+    assert.equal(context.defaultPrevented, true, 'the recognized Ctrl gesture suppresses its context menu even when the flag is missing');
+    if (keyboard) card.dispatchEvent(new ui.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    else card.dispatchEvent(new ui.window.MouseEvent('pointerdown', { button: 0, bubbles: true }));
+    card.click(); assert.equal(ui.window.document.querySelector('#detail-view').classList.contains('hidden'), false);
+  }
+});
+
+test('comparison loads fail per side, retry original, ignore late results and invalidate while hidden', async t => {
+  const ui = await setup(t), doc = ui.window.document;
+  selectComparison(ui, 'a'); selectComparison(ui, 'b');
+  const old = ui.requests.filter(m => m.type === 'loadPreview'); ui.send({ ...old[0], type: 'previewError', message: 'corrupt image' }); await comparisonTick();
+  assert.match(doc.querySelector('[data-side="0"] .compare-feedback').textContent, /corrupt image/);
+  assert.equal(doc.querySelector('.compare-toggle').disabled, true);
+  ui.click('[data-original="0"]'); assert.equal(ui.last('loadPreview').original, true);
+  const retry = ui.last('loadPreview'); ui.send({ ...old[0], type: 'preview', source: 'https://stale.test/a' }); assert.equal(ui.imageFor(retry.requestId).hasAttribute('src'), false);
+  ui.send({ type: 'panelVisibility', visible: false });
+  ui.send({ type: 'previewConfigurationChanged', resolution: 512 }); ui.send({ type: 'panelVisibility', visible: true });
+  assert.equal(ui.last('loadPreview').resolution, 512); assert.equal(ui.requests.some(m => m.type === 'loadCaption'), false);
+  ui.send({ type: 'images', images: [records[0]] }); assert.equal(doc.querySelector('.compare-view'), null);
+  assert.equal(doc.querySelectorAll('.comparison-marker').length, 1);
+  assert.equal(doc.querySelector('[data-media-id=a] .comparison-marker').textContent, 'A');
+});
+
+test('comparison selection survives virtual grid recycling and refresh removes only missing files', async t => {
+  const media = Array.from({ length: 1000 }, (_, i) => ({ id: `item${i}`, name: `image${i}.jpg`, relativePath: `image${i}.jpg` }));
+  const ui = await setup(t, {}, {}, media), doc = ui.window.document, viewport = doc.querySelector('#gallery-view');
+  selectComparison(ui, 'item0'); viewport.scrollTop = 10000; viewport.dispatchEvent(new ui.window.Event('scroll')); ui.flushFrames();
+  assert.equal(doc.querySelector('[data-media-id=item0]'), null);
+  viewport.scrollTop = 0; viewport.dispatchEvent(new ui.window.Event('scroll')); ui.flushFrames();
+  assert.equal(doc.querySelector('[data-media-id=item0] .comparison-marker').textContent, 'A');
+  ui.send({ type: 'images', images: media.slice(1) }); assert.equal(doc.querySelectorAll('.comparison-marker').length, 0);
+});
+
+test('comparison pins oversized originals and the independent reference copy until exit, then restores eviction', async t => {
+  const ui = await setup(t, { maxPreviewResolution: 0 }), doc = ui.window.document;
+  selectComparison(ui, 'a'); selectComparison(ui, 'b'); await readyComparison(ui, 6000, 3000);
+  assert.equal(doc.querySelector('.compare-view').dataset.ready, 'true'); assert.equal(doc.querySelectorAll('.compare-view img').length, 3);
+  const count = ui.requests.filter(m => m.type === 'loadPreview').length;
+  for (let i = 0; i < 10; i++) ui.click('.compare-toggle');
+  assert.equal(ui.requests.filter(m => m.type === 'loadPreview').length, count); assert.equal(doc.querySelector('[data-side="1"] img').hasAttribute('src'), true);
+  ui.click('[data-action=back]'); assert.ok(ui.requests.filter(m => m.type === 'releasePreview').length >= 2);
+  ui.click('#compare-selected'); assert.equal(ui.requests.filter(m => m.type === 'loadPreview').length, count + 2);
+});
+
+test('automatic comparison delays 350 ms, preserves the pair on exit and clears only on a fresh Gallery Escape', async t => {
+  const ui = await setup(t, { showCaption: true }, {}, records, true), doc = ui.window.document;
+  const viewport = doc.querySelector('#gallery-view'); viewport.scrollTop = 125;
+  for (const exit of ['button', 'Escape']) {
+    clickComparisonSelection(ui, 'a'); assert.equal(doc.querySelector('[data-media-id=a] .comparison-marker').textContent, 'A');
+    ui.advance(1000); assert.equal(doc.querySelector('.compare-view'), null, 'one image cannot auto-open');
+    clickComparisonSelection(ui, 'b');
+    assert.equal(doc.querySelector('#gallery-view').classList.contains('hidden'), false);
+    assert.equal(doc.querySelectorAll('.comparison-marker').length, 2);
+    assert.equal(doc.querySelector('[data-media-id=b] .comparison-marker').textContent, 'B');
+    assert.equal(ui.requests.some(m => m.type === 'loadCaption'), false);
+    ui.advance(349); assert.equal(doc.querySelector('.compare-view'), null);
+    ui.advance(1); assert.ok(doc.querySelector('.compare-view'));
+    if (exit === 'button') ui.click('[data-action=back]');
+    else doc.dispatchEvent(new ui.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    assert.equal(doc.querySelector('.compare-view'), null); assert.equal(viewport.scrollTop, 125);
+    assert.equal(doc.querySelectorAll('.comparison-marker').length, 2);
+    assert.equal(doc.querySelector('#compare-selected').disabled, false);
+    ui.advance(1000); assert.equal(doc.querySelector('.compare-view'), null, 'exit cannot schedule another comparison');
+    doc.dispatchEvent(new ui.window.KeyboardEvent('keydown', { key: 'Escape', repeat: true, bubbles: true }));
+    assert.equal(doc.querySelectorAll('.comparison-marker').length, 2, 'holding Escape cannot clear the returned pair');
+    doc.dispatchEvent(new ui.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    assert.equal(doc.querySelectorAll('.comparison-marker, .comparison-selected').length, 0);
+    assert.equal(doc.querySelector('#compare-selected').disabled, true);
+  }
+});
+
+test('pending comparison is cancelled by changed selection, clear, search, refresh, preview, settings, hiding or Escape', async t => {
+  for (const action of ['deselect', 'clear', 'search', 'refresh', 'missing', 'preview', 'settings', 'hidden', 'blur', 'Escape']) {
+    const ui = await setup(t, {}, {}, records, true), doc = ui.window.document;
+    clickComparisonSelection(ui, 'a'); clickComparisonSelection(ui, 'b');
+    if (action === 'deselect') clickComparisonSelection(ui, 'b');
+    else if (action === 'clear') ui.click('#clear-comparison');
+    else if (action === 'search') { const field = doc.querySelector('#search'); field.value = 'a'; field.dispatchEvent(new ui.window.Event('input')); }
+    else if (action === 'refresh') ui.send({ type: 'loading', scanId: 2 });
+    else if (action === 'missing') ui.send({ type: 'images', images: [records[0]] });
+    else if (action === 'preview') ui.click('[data-media-id=a]');
+    else if (action === 'settings') ui.click('#gallery-settings');
+    else if (action === 'hidden') ui.send({ type: 'panelVisibility', visible: false });
+    else ui.window.dispatchEvent(action === 'blur' ? new ui.window.Event('blur') : new ui.window.KeyboardEvent('keydown', { key: 'Escape' }));
+    ui.advance(1000); assert.equal(doc.querySelector('.compare-view'), null, action);
+    if (action !== 'preview') assert.equal(ui.requests.some(m => m.type === 'loadPreview' && m.detail), false, action);
+  }
+});
+
+async function setup(t, settings, persisted = {}, media = records, controlledClock = false) {
   const host = await createHost(t, settings);
   const dom = new JSDOM(host.panel.webview.html, { runScripts: 'outside-only', pretendToBeVisual: true });
   t.after(() => dom.window.close());
   const { window } = dom, requests = [];
+  let now = 0, timerId = 0; const timers = new Map();
+  if (controlledClock) {
+    window.setTimeout = (fn, delay = 0, ...args) => { const id = --timerId; timers.set(id, { time: now + Number(delay), fn, args }); return id; };
+    window.clearTimeout = id => timers.delete(id);
+  }
+  const advance = milliseconds => {
+    const end = now + milliseconds;
+    for (let limit = 0; limit < 1000; limit++) {
+      const due = [...timers].filter(([, timer]) => timer.time <= end).sort((a, b) => a[1].time - b[1].time)[0];
+      if (!due) { now = end; return; }
+      timers.delete(due[0]); now = due[1].time; due[1].fn(...due[1].args);
+    }
+    throw new Error('Controlled clock did not settle.');
+  };
   const mediaCalls = [], paused = new WeakMap();
   window.HTMLMediaElement.prototype.load = function () { mediaCalls.push({ type: 'load', element: this }); };
   window.HTMLMediaElement.prototype.pause = function () { paused.set(this, true); mediaCalls.push({ type: 'pause', element: this }); };
@@ -36,13 +302,15 @@ async function setup(t, settings, persisted = {}, media = records) {
   const flushFrames = () => { const current = [...frames.values()]; frames.clear(); current.forEach((fn) => fn()); };
   window.eval(fs.readFileSync(path.join(__dirname, '../media/galleryGrid.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '../media/videoStream.js'), 'utf8'));
+  window.eval(fs.readFileSync(path.join(__dirname, '../media/fileContextMenu.js'), 'utf8'));
+  window.eval(fs.readFileSync(path.join(__dirname, '../media/compareView.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '../media/main.js'), 'utf8'));
   const send = (data) => window.dispatchEvent(new window.MessageEvent('message', { data }));
   const click = (selector) => window.document.querySelector(selector).click();
   const last = (type) => requests.filter((m) => m.type === type).at(-1);
   const visible = (isIntersecting = true) => observer.callback([...observer.targets].map((target) => ({ target, isIntersecting })));
   send({ type: 'images', images: media });
-  return { window, requests, mediaCalls, send, click, last, visible, flushFrames, imageFor: (token) => createdImages.find((image) => image.dataset.previewRequest === token), state: () => state };
+  return { window, requests, mediaCalls, send, click, last, visible, flushFrames, advance, imageFor: (token) => createdImages.find((image) => image.dataset.previewRequest === token), state: () => state };
 }
 
 function caption(ui, request, text = 'hello') {
@@ -82,6 +350,35 @@ test('toolbar toggles captions, session state wins, and new galleries use the co
   assert.equal(restored.window.document.querySelector('#toggle-caption').getAttribute('aria-pressed'), 'false');
   const fresh = await setup(t, { showCaption: true });
   assert.equal(fresh.window.document.querySelector('#toggle-caption').getAttribute('aria-pressed'), 'true');
+});
+
+test('E opens caption editing, waits for hidden captions, and never steals typing or modified keys', async (t) => {
+  const ui = await setup(t, { showCaption: true }), doc = ui.window.document;
+  doc.dispatchEvent(new ui.window.KeyboardEvent('keydown', { key: 'e', bubbles: true, cancelable: true }));
+  assert.equal(doc.querySelector('#detail-view').classList.contains('hidden'), true, 'Gallery does not consume E');
+  ui.click('.image-card');
+  caption(ui, ui.last('loadCaption'), 'existing caption');
+  doc.querySelector('#detail-view').dispatchEvent(new ui.window.KeyboardEvent('keydown', { key: 'e', bubbles: true, cancelable: true }));
+  const editor = doc.querySelector('#caption-editor');
+  assert.equal(editor.classList.contains('hidden'), false);
+  assert.equal(doc.activeElement, editor);
+  editor.value = 'typed e';
+  editor.dispatchEvent(new ui.window.KeyboardEvent('keydown', { key: 'e', bubbles: true, cancelable: true }));
+  assert.equal(editor.value, 'typed e', 'typing in the editor remains independent');
+
+  const hidden = await setup(t, { showCaption: false }), hiddenDoc = hidden.window.document;
+  hidden.click('.image-card');
+  const target = hiddenDoc.querySelector('#detail-view');
+  target.dispatchEvent(new hidden.window.KeyboardEvent('keydown', { key: 'e', bubbles: true, cancelable: true, metaKey: true }));
+  assert.equal(hidden.requests.some(message => message.type === 'loadCaption'), false, 'modified E is left to the platform');
+  target.dispatchEvent(new hidden.window.KeyboardEvent('keydown', { key: 'e', bubbles: true, cancelable: true }));
+  assert.equal(target.classList.contains('text-hidden'), false);
+  const request = hidden.last('loadCaption');
+  assert.ok(request, 'E reveals Caption and requests the current text');
+  assert.equal(hiddenDoc.querySelector('#caption-editor').classList.contains('hidden'), true, 'editing waits for the caption response');
+  caption(hidden, request, 'loaded later');
+  assert.equal(hiddenDoc.querySelector('#caption-editor').classList.contains('hidden'), false);
+  assert.equal(hiddenDoc.activeElement, hiddenDoc.querySelector('#caption-editor'));
 });
 
 test('unsaved captions are preserved on Continue; Save and Discard hide Text only after a decision', async (t) => {
@@ -970,4 +1267,44 @@ test('image Full screen button and F open browser without touching caption draft
   search.value = 'b'; search.dispatchEvent(new grid.window.Event('input', { bubbles: true }));
   await new Promise(resolve => setTimeout(resolve, 200)); grid.click('#image-browser-fullscreen');
   assert.equal(grid.last('openImagesInBrowser').id, 'b'); assert.equal(grid.last('openImagesInBrowser').search, 'b');
+});
+
+test('right-click offers original file path for virtual cards, image/video details and preserves ordinary caption menus', async t => {
+  const ui = await setup(t, { showCaption: false }, {}, [...records, { id: 'clip', kind: 'video', name: 'clip.mp4', relativePath: 'clip.mp4' }]), doc = ui.window.document;
+  const context = selector => { const event = new ui.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 50, clientY: 60 }); doc.querySelector(selector).dispatchEvent(event); return event; };
+  const before = ui.requests.length;
+  assert.equal(context('[data-media-id="b"]').defaultPrevented, true); assert.equal(doc.querySelector('[role=menuitem]').textContent, 'Copy File Path');
+  assert.equal(doc.querySelector('#detail-view').classList.contains('hidden'), true); assert.equal(ui.requests.length, before);
+  ui.click('[role=menuitem]'); const copy = ui.last('copyFilePath'); assert.equal(copy.id, 'b');
+  ui.send({ type: 'filePathCopied', requestId: copy.requestId, id: 'a', copied: true }); await comparisonTick(); assert.ok(doc.querySelector('[role=menu]'), 'wrong response ID does not settle copy');
+  ui.send({ type: 'filePathCopied', requestId: copy.requestId, id: 'b', copied: true }); await comparisonTick(); assert.equal(doc.querySelector('[role=menu]'), null);
+  ui.click('[data-media-id="a"]'); context('#image-stage'); ui.click('[role=menuitem]'); assert.equal(ui.last('copyFilePath').id, 'a');
+  let request = ui.last('copyFilePath');
+  ui.send({ ...request, type: 'filePathCopied', copied: false, error: 'clipboard blocked' }); await comparisonTick(); assert.match(doc.querySelector('[role=alert]').textContent, /Could not copy/);
+  doc.dispatchEvent(new ui.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); assert.equal(doc.querySelector('#detail-view').classList.contains('hidden'), false);
+  ui.click('#back'); ui.click('[data-media-id="clip"]'); const calls = ui.mediaCalls.length;
+  context('#detail-video'); ui.click('[role=menuitem]'); assert.equal(ui.last('copyFilePath').id, 'clip'); assert.equal(ui.mediaCalls.length, calls);
+  request = ui.last('copyFilePath'); ui.send({ ...request, type: 'filePathCopied', copied: true }); await comparisonTick();
+  assert.equal(context('#caption-preview').defaultPrevented, false); assert.equal(doc.querySelector('[role=menu]'), null);
+});
+
+test('comparison menu copies the visible A/B source and consumes Escape without leaving comparison', async t => {
+  const ui = await setup(t), doc = ui.window.document; selectComparison(ui, 'a'); selectComparison(ui, 'b'); await readyComparison(ui);
+  const context = side => doc.querySelector(`[data-side="${side}"] .compare-stage`).dispatchEvent(new ui.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
+  context(0); ui.click('[role=menuitem]'); assert.equal(ui.last('copyFilePath').id, 'a'); let request = ui.last('copyFilePath'); ui.send({ ...request, type: 'filePathCopied', copied: true }); await comparisonTick();
+  ui.click('.compare-toggle'); context(0); ui.click('[role=menuitem]'); assert.equal(ui.last('copyFilePath').id, 'b'); request = ui.last('copyFilePath'); ui.send({ ...request, type: 'filePathCopied', copied: true }); await comparisonTick();
+  context(1); doc.dispatchEvent(new ui.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); assert.equal(doc.querySelector('[role=menu]'), null); assert.ok(doc.querySelector('.compare-view'));
+});
+
+test('macOS control context gesture retains comparison selection rather than opening the file menu', async t => {
+  const ui = await setup(t), doc = ui.window.document, card = doc.querySelector('[data-media-id="a"]');
+  card.dispatchEvent(new ui.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, ctrlKey: true }));
+  assert.equal(doc.querySelector('[role=menu]'), null); assert.equal(doc.querySelector('.comparison-marker').textContent, 'A');
+});
+
+test('keyboard context menu works from focused detail and comparison roots',async t=>{
+ const ui=await setup(t),doc=ui.window.document;
+ const key=target=>target.dispatchEvent(new ui.window.KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true,cancelable:true}));
+ ui.click('[data-media-id="a"]');key(doc.querySelector('#detail-view'));assert.ok(doc.querySelector('[role=menu]'));ui.click('[role=menuitem]');let request=ui.last('copyFilePath');assert.equal(request.id,'a');ui.send({...request,type:'filePathCopied',copied:true});await comparisonTick();
+ ui.click('#back');selectComparison(ui,'a');selectComparison(ui,'b');await readyComparison(ui);key(doc.querySelector('.compare-view'));ui.click('[role=menuitem]');request=ui.last('copyFilePath');assert.equal(request.id,'a');ui.send({...request,type:'filePathCopied',copied:true});await comparisonTick();
 });

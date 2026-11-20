@@ -2,38 +2,53 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-A fast, local-first VS Code extension for browsing image/video datasets and editing sidecar captions without leaving the editor.
+A fast, local-first VS Code extension for browsing image/video datasets, comparing images, and editing sidecar captions without leaving the editor.
 
-Open a folder as an adjustable gallery, select an image or video, and review or edit its matching `.txt` caption beside it. Captions stay read-only by default and can be rendered as Markdown, raw text, or formatted JSON.
+**Compare image pairs with linked zoom and pan. Press `E` to edit a matching `.txt` Caption. Browse large local or Remote SSH datasets without transferring full-resolution images up front.**
+
+## Highlights
+
+| Two-image comparison | Caption review and editing |
+| --- | --- |
+| Command-click on macOS or Ctrl-click on Windows/Linux to select A and B. Compare them side by side, switch the left pane between A/B, hold `Space` for a temporary reference overlay, link zoom and pan, or continue in true browser fullscreen. | Read the same-name `.txt` beside each image or video as Markdown, plain text, or formatted JSON. Press `E` to start editing, save with `Command+S` / `Ctrl+S`, and keep drafts protected during navigation and external file changes. |
+
+The extension also supports camera RAW, mixed image/video folders, virtualized large galleries, on-demand video playback, browser fullscreen, and host-side previews that reduce Remote SSH traffic.
 
 ## Preview
 
-### Gallery overview
+### Compare two images side by side
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Xingfu-Yi/vscode-image-caption-gallery/main/docs/images/gallery-overview.jpg" alt="Image Caption Gallery showing an adjustable image dataset gallery" width="100%">
+  <img src="https://raw.githubusercontent.com/Xingfu-Yi/vscode-image-caption-gallery/main/docs/images/two-image-comparison.png" alt="Image Caption Gallery comparing source A and reference B side by side with linked views" width="100%">
 </p>
 
-### Image and Markdown caption
+### Edit a matching TXT Caption
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Xingfu-Yi/vscode-image-caption-gallery/main/docs/images/gallery-detail-en.jpg" alt="Image Caption Gallery showing an image beside an English Markdown caption" width="100%">
+  <img src="https://raw.githubusercontent.com/Xingfu-Yi/vscode-image-caption-gallery/main/docs/images/gallery-detail-zh.jpg" alt="Image Caption Gallery editing a same-name TXT Caption with save and cancel controls" width="100%">
 </p>
 
-### Caption editing
+### Review Markdown Caption beside the image
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Xingfu-Yi/vscode-image-caption-gallery/main/docs/images/gallery-detail-zh.jpg" alt="Image Caption Gallery editing a same-name TXT caption with save and cancel controls" width="100%">
+  <img src="https://raw.githubusercontent.com/Xingfu-Yi/vscode-image-caption-gallery/main/docs/images/gallery-detail-en.jpg" alt="Image Caption Gallery showing an image beside a rendered Markdown Caption" width="100%">
+</p>
+
+### Browse the whole dataset
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Xingfu-Yi/vscode-image-caption-gallery/main/docs/images/gallery-overview.jpg" alt="Image Caption Gallery showing an adjustable image and video dataset gallery" width="100%">
 </p>
 
 ## Features
 
 - Open a folder, selected image, or selected video from the Explorer context menu.
 - Launch instantly with `Command+Option+G` (`⌘⌥G`) on macOS or `Ctrl+Alt+G` on Windows/Linux.
+- Compare two images side by side with linked or independent zoom/pan, instant A/B switching, hold-Space reference viewing, and browser fullscreen.
 - Recursively discover `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp`, `.avif`, and camera RAW files such as `.dng`, `.cr2`, `.cr3`, `.nef`, and `.arw`.
 - Resize gallery thumbnails continuously from 96 px to 480 px.
 - Search images by filename or relative path.
-- Read, edit, and create same-name `.txt` sidecar captions with an explicit Edit mode.
+- Read, edit, and create same-name `.txt` sidecar Captions; press `E` in details to enter Edit mode and focus the editor.
 - Render captions as Markdown by default, with Raw text and formatted JSON modes.
 - Save with `Command+S` / `Ctrl+S`, or cancel with `Escape`.
 - Confirm before switching images, returning to Gallery, or hiding Text when a draft is unsaved.
@@ -54,6 +69,21 @@ Open a folder as an adjustable gallery, select an image or video, and review or 
 - Browse MP4, WebM, MOV, AVI, MKV and other video files alongside images, with native playback, seeking, volume and fullscreen controls.
 - Load only first-frame posters in the grid; stream original byte ranges or short compatibility fragments on demand in details.
 
+Right-click (or two-finger click on a trackpad) an image/video card, media preview or filename and choose **Copy File Path**. This copies the original absolute path on its host, including the server path under Remote SSH. It also works in comparison and browser fullscreen; the left reference copy uses B’s path. Caption text keeps its normal editing menu. macOS Ctrl-click in Gallery retains its comparison-selection behavior.
+
+## Two-image comparison
+
+Ctrl-click (Windows/Linux) or Command-click (macOS) two **images** in Gallery. Selection order assigns A to the left and reference B to the right; both A/B markers remain visible for 350 ms after the second selection before comparison opens automatically. macOS Ctrl-click also works without a conflicting context menu. Ordinary clicks open details; videos cannot be selected for comparison.
+
+- Click **Left: A / Left: B** in the top toolbar to switch between **A | B** and **B | B**. The right image stays fixed, with no toggle over the image divider.
+- **Hold Space** to temporarily show B on the left; release it to restore the previous left-image selection. Losing focus or hiding the page clears the held key.
+- Pinch or Ctrl/Command-wheel to zoom; drag or two-finger scroll to pan. Views share a fit-relative magnification and normalized center by default. Choose **Independent** to adjust each separately; double-click a pane to fit it. Aspect ratios are preserved without automatic registration or cropping.
+- **Full screen** or **F** opens a private browser comparison with the current pair, preview quality and views. Click Full screen again there to enter native fullscreen. Controls hide after two idle seconds. Esc exits fullscreen and stays in the browser.
+- Each pane header shows the displayed image’s original resolution; hover for its full path and original/preview dimensions.
+- **Esc** in the VS Code comparison returns to Gallery with scroll and A/B selections preserved. Press **Esc** again in Gallery to clear both selections; holding the key does not clear them. Ctrl/Command-click a selected image to remove it, or use **×** to clear both. Search changes clear selection; refresh removes missing files.
+
+Comparison never reads captions or changes the Gallery Caption preference. A, B and an independent left reference copy are decoded before switching is enabled; prepared switches need no new preview requests or decoding. All three count toward the 128 MiB decoded-image cache estimate, with unrelated entries evicted first. Explicit active originals or animations can exceed the estimate; their quality and animation are preserved. RAW and transparency use the existing host preview pipeline. Animation timing is not synchronized. Each side offers Retry / Load original on failure. Browser and panel operate independently after opening; browser sessions expire after 30 minutes of inactivity.
+
 ## Install
 
 Install directly from the VS Code Marketplace:
@@ -72,7 +102,7 @@ When using Remote SSH, install the extension in the remote extension host. If yo
 2. Right-click an image, video, or folder in Explorer and select **Image Caption Gallery**. You can also select an image and press the launch shortcut.
 3. Adjust the thumbnail size or search the gallery.
 4. Select an image or video to open the side-by-side media and Text view.
-5. Select **Edit** to change the caption. Use `Command+S` / `Ctrl+S` or the checkmark to save; use `Escape` or × to cancel.
+5. Press `E` or select **Edit** to change the Caption. Use `Command+S` / `Ctrl+S` or the checkmark to save; use `Escape` or × to cancel.
 
 If the matching `.txt` file does not exist, Edit starts with an empty draft and Save creates the file. If another program changes the caption while you are editing, Image Caption Gallery asks whether to overwrite it, reload the external version, or keep editing your draft.
 
@@ -142,7 +172,14 @@ Open an image and click **Full screen** in the detail toolbar, or press **F**. T
 
 Adjacent images are generated on the host, transferred and decoded before navigation. The browser keeps up to seven images within a 128 MiB estimated decoded-memory budget, protects the displayed image and checks file versions in the background. Oversized originals/animations load on demand instead of speculative downloads; source quality and animation behavior are preserved. Cold images can still take time to process or transfer. SSH uses the existing private forwarding service; closing Gallery keeps the browser session alive, while disconnecting SSH or closing VS Code stops it. Sessions expire after 30 inactive minutes.
 
+### Browser Gallery navigation
+
+The independent browser image, video and comparison views include a **Gallery** control. It leaves native fullscreen when necessary and switches the same browser tab to the mixed image/video result set that was active when the viewer opened. The browser Gallery remembers its own search, scroll position and selected file; click a card to return to an image viewer or video player. Returning from video retains its position, selected quality, speed, volume and mute state. Press **F** to show the browser Gallery itself in native fullscreen.
+
+The browser grid is virtualized, so a large folder keeps only visible rows and a small overscan in the DOM. Its list endpoint sends metadata pages only. At most four visible thumbnails are requested at once; leaving the viewport cancels unused work. Image cards use small static previews, while video cards request only a cached first-frame poster—never a hidden player or whole-video conversion. Right-click / trackpad secondary-click still copies the original host path. Browser Gallery does not request Caption files or touch unsaved Caption drafts. It uses the same random, expiring private session and Remote SSH forwarding as the fullscreen viewer.
+
 ### Video browsing
+
 
 MP4, WebM, MOV, M4V, AVI, MKV, MPG/MPEG, WMV, 3GP, MTS/M2TS, OGV, VOB and FLV appear alongside images. Scanning reads file records only. A visible video card requests a small JPEG of its **first frame**, with a play icon and format badge; it never loads a video into the grid. Poster generation needs FFmpeg and is cached. Small JPEGs travel directly in the result message, avoiding a second Remote SSH resource fetch; only Gallery’s visibility scheduler controls loading. Cards show preparation or failure status instead of waiting silently. Hover a ready thumbnail for cache status, byte size, host queue/extraction time and approximate message/display overhead. Refresh retries failures.
 
@@ -161,7 +198,7 @@ Gallery serializes SourceBuffer updates, rejects aborted/closed operations and i
 Playback reads the requested part of the remote file, without first preparing a complete video:
 
 - **Compatible originals:** HTTP byte-range requests read the required bytes. Open-ended ranges are capped at 4 MiB per response. Seeking lets the browser request the corresponding position directly.
-- **Compatibility playback:** `imageCaptionGallery.videoCompatibility` defaults to `"auto"`. FFprobe reads codec/duration metadata; incompatible files use MediaSource with **four-second VP8/Vorbis WebM fragments**, generated by FFmpeg on the extension host only when requested. Opening a paused detail prepares the current fragment; playback preloads at most two fragments ahead and retains a small buffer around the current position. Seeking requests the selected fragment directly and cancels obsolete work. No intervening fragments or full-length compatibility copy are prepared.
+- **Compatibility playback:** `imageCaptionGallery.videoCompatibility` defaults to `"auto"`. FFprobe reads codec/duration metadata; incompatible files use MediaSource with **four-second VP8/Vorbis WebM fragments**, generated by FFmpeg on the extension host only when requested. Opening a paused detail prepares only the current fragment. During playback, two in-flight requests overlap host processing and SSH transfer, while MediaSource appends remain serial. Forward buffering targets about 20 seconds of viewing time, scales with playback speed up to 48 seconds of media, and respects an encoded-data budget (32 MiB appended in Gallery, plus at most two 16 MiB in-flight fragments). The browser player adjusts its window from observed fragment sizes. Seeking requests the selected fragment directly and cancels obsolete work. No intervening fragments or full-length compatibility copy are prepared.
 
 For example, AAC audio is not supported by VS Code's webview, so H.264/AAC MP4 uses compatibility fragments. See [VS Code's supported media formats](https://code.visualstudio.com/api/extension-guides/webview#supported-media-formats). **Convert with FFmpeg** also uses short fragments. **Play original video** lets you try native playback if compatibility processing fails. Seeking into an uncached fragment can still briefly wait for server decoding and transfer.
 
@@ -169,7 +206,7 @@ The player offers **Original, 2K, 1080p and 720p** below the picture. **The defa
 
 Quality changes retain position, speed, volume and paused/playing state, and preserve Caption drafts. Each Gallery retains its own selection; new galleries use VS Code defaults, without writing workspace settings from UI changes. Legacy Gallery preview defaults migrate to the new configured default; legacy 480/2160 configuration values map to 720p/2K. The header keeps original dimensions and the bottom row shows playback dimensions, marking smaller unchanged sources as Original. Loading, errors and fallback actions sit below the picture; technical details appear in Settings instead of a permanent banner. Image pixel limits and pinch zoom remain image-only.
 
-Install **FFmpeg and ffprobe** on the extension host: your computer for local folders, or the **remote server** for Remote SSH. Compatibility playback needs `libvpx` and `libvorbis` (or the native `vorbis` encoder); it does not require `libmp3lame`. The extension checks available encoders. For the default `ffmpeg` command it can also try common system locations, avoiding a limited PATH build when a suitable system build is available. Executables are not included in the VSIX or downloaded automatically. Without tools, original MP4/WebM/MOV/M4V playback is still attempted; poster cards keep their play icon, and compatibility processing shows an actionable error.
+Install **FFmpeg and ffprobe** on the extension host: your computer for local folders, or the **remote server** for Remote SSH. Compatibility playback needs `libvpx` and `libvorbis`; it does not require `libmp3lame`. The experimental native `vorbis` encoder is excluded because it can produce out-of-order WebM timestamps rejected by Chromium. Older compatibility-fragment caches are automatically regenerated. The extension checks available encoders. For the default `ffmpeg` command it can also try common system locations, avoiding a limited PATH build when a suitable system build is available. Executables are not included in the VSIX or downloaded automatically. Without tools, original MP4/WebM/MOV/M4V playback is still attempted; poster cards keep their play icon, and compatibility processing shows an actionable error.
 
 ```json
 {
@@ -181,13 +218,16 @@ Install **FFmpeg and ffprobe** on the extension host: your computer for local fo
 
 `ffmpegPath` accepts a PATH command or an absolute path, with `ffprobe` beside it. Paths with spaces need no extra quotes. For SSH, configure this machine setting under **Remote**. Set `videoCompatibility` to `"native"` to skip codec probing and compatibility processing; manual compatibility playback remains available after a native playback error.
 
-The media endpoint listens only on the extension host's loopback interface, uses revocable random URLs, and is privately forwarded by VS Code under Remote SSH. No manual public port is needed. Playback uses at most two FFmpeg jobs. First-frame extraction has a separate CPU-bounded lane of 1–4 jobs, so another Gallery’s playback cannot starve posters; each poster decoder/filter/encoder uses one thread and duplicate work is shared. Posters try limited input probing, with one normal-probing fallback for unusual containers; they never scan the video to pick a representative scene. Disk cache hits bypass FFmpeg detection, including after restarting the host. Completed fragments and posters use a separate **512 MiB LRU cache**, keyed by source path, modification time, size, tool and playback settings. Visible grid posters are protected until released. Original media is never modified. Compatibility playback uses the first video/audio streams and omits embedded subtitles. It does not implement automatic bitrate adaptation.
+The media endpoint listens only on the extension host's loopback interface, uses revocable random URLs, and is privately forwarded by VS Code under Remote SSH. No manual public port is needed. Playback uses at most two FFmpeg jobs. Each compatibility decoder uses at most four threads; surplus source frames are dropped before explicit preview rotation/scaling to the existing 30 fps output. First-frame extraction has a separate CPU-bounded lane of 1–4 jobs, so another Gallery’s playback cannot starve posters; each poster decoder/filter/encoder uses one thread and duplicate work is shared. Posters try limited input probing, with one normal-probing fallback for unusual containers; they never scan the video to pick a representative scene. Disk cache hits bypass FFmpeg detection, including after restarting the host. Completed fragments and posters use a separate **512 MiB LRU cache**, keyed by source path, modification time, size, tool and playback settings. Visible grid posters are protected until released. Original media is never modified. Compatibility playback uses the first video/audio streams and omits embedded subtitles. It does not implement automatic bitrate adaptation.
+
+A 1080p preview still has to decode the source, including 4K/60 fps video. Short fragments may need to decode from an earlier keyframe. If sustained processing plus transfer cannot keep up with playback, lowering quality or speed can help; preloading cannot make every source instant. Video diagnostics include request, host queue, encoding, cache and buffered-ahead timings. Server timings exclude SSH transfer; compare them with the complete request duration.
 
 ### Shortcuts
 
 | Action | macOS | Windows / Linux |
 | --- | --- | --- |
 | Open Image Caption Gallery | `Command+Option+G` (`⌘⌥G`) | `Ctrl+Alt+G` |
+| Start editing the current caption | `E` | `E` |
 | Save caption while editing | `Command+S` | `Ctrl+S` |
 | Cancel caption editing | `Escape` | `Escape` |
 | Previous / next file | `Left` / `Right` | `Left` / `Right` |

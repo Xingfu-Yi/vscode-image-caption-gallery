@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="../media/style.css">
+<link rel="stylesheet" href="../media/compareView.css">
+<link rel="stylesheet" href="../media/fileContextMenu.css">
   <style>
     :root {
       --vscode-foreground: #cccccc;
@@ -30,7 +32,7 @@
       --vscode-editor-font-family: "SFMono-Regular", Consolas, monospace;
     }
   </style>
-  <title>Image Caption Gallery 0.10.0 Preview</title>
+  <title>Image Caption Gallery 0.11.9 Preview</title>
 </head>
 <body data-default-thumbnail-size="220" data-show-caption="true" data-zoom-sensitivity="5" data-gallery-settings="{&quot;resolution&quot;:2048,&quot;concurrency&quot;:0,&quot;executionMode&quot;:&quot;process&quot;,&quot;videoCompatibility&quot;:&quot;auto&quot;,&quot;videoMaxHeight&quot;:1440,&quot;ffmpegPath&quot;:&quot;ffmpeg&quot;}" data-ui-language="en">
   <div id="browser-status" class="browser-status" role="status" aria-live="polite"></div>
@@ -40,6 +42,8 @@
       <input id="search" class="search" type="search" placeholder="Search media…" aria-label="Search images and videos">
       <span id="count" class="muted" role="status" aria-live="polite">0 images</span>
       <button id="refresh" class="icon-button" title="Refresh" aria-label="Refresh">↻</button>
+      <span id="comparison-selection" class="comparison-selection hidden"><button id="compare-selected" class="button" type="button" disabled></button><button id="clear-comparison" class="icon-button" type="button" aria-label="Clear image selection">×</button></span>
+      <button id="comparison-help" class="icon-button" type="button" aria-label="How to compare two images" title="Ctrl / ⌘ click two images to compare">A/B</button>
       <button id="gallery-settings" class="button settings-toggle" type="button" aria-haspopup="dialog" aria-controls="settings-dialog" aria-expanded="false" aria-label="Settings"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2-2 2 2 3 3 1 1 3h6l1-3 3-1 2-3-2-2 2-2-2-3-3-1-1-3z"/><circle cx="12" cy="12" r="3"/></svg><span>Settings</span></button>
     </header>
     <main id="gallery" class="gallery" aria-label="Media gallery"></main>
@@ -56,7 +60,7 @@
       <div class="text-header">
         <span id="editing-label" class="editing-label hidden">Editing .txt</span>
         <span id="edit-state" class="edit-state hidden" aria-live="polite">Unsaved</span>
-        <button id="edit-caption" class="button header-action" type="button">Edit</button>
+        <button id="edit-caption" class="button header-action" type="button" title="Edit caption (E)" aria-label="Edit caption (E)">Edit</button>
         <div id="edit-actions" class="edit-actions hidden">
           <button id="cancel-edit" class="icon-button" type="button" title="Discard edits (Escape)" aria-label="Discard edits">×</button>
           <button id="save-edit" class="icon-button primary-action" type="button" title="Save caption (Control or Command S)" aria-label="Save caption">✓</button>
@@ -133,9 +137,18 @@
   </dialog>
   <script>
     const demoSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#07204f"/><stop offset="1" stop-color="#7b2cff"/></linearGradient></defs><rect width="1200" height="900" rx="54" fill="url(#g)"/><circle cx="900" cy="210" r="90" fill="#19d3ff" opacity=".9"/><path d="M80 780 400 350l190 240 170-210 360 400Z" fill="#15c9ff" opacity=".85"/><path d="M80 780 400 350l190 240-170 190Z" fill="#ece9ff" opacity=".95"/><text x="80" y="120" fill="white" font-family="system-ui" font-size="58" font-weight="700">IMAGE DATASET</text><text x="82" y="185" fill="#bdeeff" font-family="system-ui" font-size="30">Visual review · Caption editing</text></svg>`;
+    const query = new URLSearchParams(location.search);
     const demoSource = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(demoSvg)}`;
+    const demoPreview = (id) => {
+      const index = Number(String(id).match(/(\d+)$/)?.[1] || 0);
+      const label = index % 2 ? 'REFERENCE B' : 'SOURCE A';
+      const svg = demoSvg.replace('IMAGE DATASET', label);
+      return index % 2
+        ? svg.replace('#07204f', '#4a1608').replace('#7b2cff', '#c75418').replace('#19d3ff', '#ffd166').replaceAll('#15c9ff', '#ff8c42')
+        : svg;
+    };
     const demoCaption = `# Mountain study\n\nA blue and violet landscape used to review the **image-caption pair**.\n\n- Subject: layered mountains\n- Lighting: cyan moonlight\n- Mood: calm and futuristic\n\n> Captions remain read-only until you select Edit.`;
-    const delay = Math.max(0, Math.min(2000, Number(new URLSearchParams(location.search).get('delay')) || 0));
+    const delay = Math.max(0, Math.min(2000, Number(query.get('delay')) || 0));
     window.harnessMetrics = { requests: [], status: [] };
     const metricsOutput = document.createElement('output');
     metricsOutput.id = 'harness-metrics'; metricsOutput.hidden = true; document.body.append(metricsOutput);
@@ -148,8 +161,8 @@
     const poolStatus = () => window.postMessage({ type: 'previewPoolStatus', requested: previewWorkers, workers: previewWorkers || 2, backend: previewMode, mode: previewMode }, '*');
     let state = {};
     let caption = demoCaption;
-    const videoCount = Math.max(0, Math.min(100, Number(new URLSearchParams(location.search).get('videos')) || 0));
-    const sampleCount = Math.max(1, Math.min(100000, Number(new URLSearchParams(location.search).get('count')) || 8));
+    const videoCount = Math.max(0, Math.min(100, Number(query.get('videos')) || 0));
+    const sampleCount = Math.max(1, Math.min(100000, Number(query.get('count')) || 8));
     const records = videoCount ? Array.from({ length: videoCount }, (_, index) => ({ id: `demo-clip-${index}`, name: `first-frame-${index + 1}.mp4`, relativePath: `dataset/first-frame-${index + 1}.mp4`, kind: 'video' })) : Array.from({ length: sampleCount }, (_, index) => ({
       id: `demo-${index}`, name: `mountain-study-${String(index + 1).padStart(2, '0')}.png`, relativePath: `dataset/mountain-study-${String(index + 1).padStart(2, '0')}.png`, source: demoSource,
     }));
@@ -178,7 +191,7 @@
         } else if (message.type === 'loadVideo') {
           setTimeout(() => window.postMessage({ type: 'video', id: message.id, requestId: message.requestId, converted: message.id === 'demo-compatible', source: message.id === 'demo-compatible' ? 'fixtures/video-compatible.mp4' : 'fixtures/video-sample.webm' }, '*'));
         } else if (message.type === 'loadPreview') {
-          setTimeout(() => window.postMessage({ type: 'preview', id: message.id, requestId: message.requestId, source: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(demoSvg.replace('IMAGE DATASET', `IMAGE ${message.id.replace('demo-', '')}`))}`, originalWidth: 1200, originalHeight: 900, width: 1200, height: 900, frameCount: 1, timings: { cacheHit: false, queueMs: 20, readMs: 5, processMs: 160, writeMs: 4, totalMs: 189, engine: previewMode } }, '*'), delay);
+          setTimeout(() => window.postMessage({ type: 'preview', id: message.id, requestId: message.requestId, source: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(demoPreview(message.id))}`, originalWidth: 1200, originalHeight: 900, width: 1200, height: 900, frameCount: 1, timings: { cacheHit: false, queueMs: 20, readMs: 5, processMs: 160, writeMs: 4, totalMs: 189, engine: previewMode } }, '*'), delay);
         } else if (message.type === 'loadCaption') {
           setTimeout(() => window.postMessage({
             type: 'caption', id: message.id, requestId: message.requestId, caption,
@@ -195,9 +208,21 @@
         }
       },
     });
+    if (query.get('view') === 'compare') {
+      const openComparison = setInterval(() => {
+        const cards = document.querySelectorAll('.image-card');
+        if (cards.length < 2) { return; }
+        clearInterval(openComparison);
+        for (const card of [cards[0], cards[1]]) {
+          card.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }));
+        }
+      }, 50);
+    }
   </script>
   <script src="../media/galleryGrid.js"></script>
   <script src="../media/videoStream.js"></script>
+  <script src="../media/fileContextMenu.js"></script>
+  <script src="../media/compareView.js"></script>
   <script src="../media/main.js"></script>
 </body>
 </html>

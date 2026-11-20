@@ -228,3 +228,74 @@ test('Remote SSH thumbnails carry a small inline WebP while details retain lease
  const service=host.context.subscriptions.find(item=>item.constructor.name==='PreviewService');service.options.process=async()=>({originalWidth:4096,originalHeight:4096,width:512,height:512,bytes:new Uint8Array(300*1024)});
  await host.panel.receive({type:'loadPreview',id,requestId:'oversized-thumbnail',detail:false,resolution:256});assert.match(host.sent.at(-1).source,/^https:\/\/resources.test/);assert.equal(host.sent.at(-1).inlineBytes,undefined,'large thumbnail payloads use the bounded resource path');
 });
+
+
+test('literal URI characters in local and SSH filenames preserve scan labels, previews and captions', async t => {
+  const filenames = ['80%和20%.jpg', 'literal%20space.jpg', 'literal%2Fslash.jpg', 'literal%E4%B8%AD.jpg', 'invalid%FF.jpg', 'truncated%E4%B8.jpg', '井号# 空格 + 🎞️.jpg', 'video80%.mp4'];
+  for (const remote of [false, true]) {
+    const host = await createHost(t, { maxPreviewResolution: 0 }, remote);
+    const folder = '子目录50% # +'; await fs.mkdir(path.join(host.dataset, folder));
+    for (const filename of filenames) {
+      await fs.writeFile(path.join(host.dataset, folder, filename), 'not read during scan');
+      await fs.writeFile(path.join(host.dataset, folder, filename.replace(/\.[^.]+$/, '.txt')), `caption: ${filename}`);
+    }
+    await host.panel.receive({ type: 'ready' });
+    assert.equal(host.sent.some(message => message.type === 'error'), false);
+    const records = host.sent.find(message => message.type === 'images').images;
+    assert.equal(records.length, filenames.length);
+    assert.deepEqual(new Set(records.map(record => record.relativePath)), new Set(filenames.map(filename => `${folder}/${filename}`)));
+    assert.equal(host.reads.length, 0, 'scanning must remain metadata-only');
+    for (const record of records) {
+      assert.equal(record.name, record.relativePath.slice(folder.length + 1));
+      if (record.kind === 'video') {
+        await host.panel.receive({ type: 'loadVideo', id: record.id, requestId: record.name, videoCompatibility: 'native' });
+        assert.equal(host.sent.at(-1).type, 'video');
+      } else {
+        await host.panel.receive({ type: 'loadPreview', id: record.id, requestId: record.name, detail: true });
+        const preview = host.sent.at(-1);
+        assert.equal(preview.type, 'preview');
+        assert.equal(new URL(preview.source).searchParams.get('uri'), record.id);
+      }
+      await host.panel.receive({ type: 'loadCaption', id: record.id, requestId: `caption-${record.name}` });
+      const caption = host.sent.at(-1);
+      assert.equal(caption.type, 'caption');
+      assert.equal(caption.caption, `caption: ${record.name}`);
+    }
+  }
+});
+
+test('opening a percent-named local or SSH file directly preserves its initial image and caption', async t => {
+  for (const remote of [false, true]) {
+    const host = await createHost(t, { maxPreviewResolution: 0 }, remote), name = '原图80% literal%2F #.jpg';
+    await fs.writeFile(path.join(host.dataset, name), 'original');
+    await fs.writeFile(path.join(host.dataset, name.replace(/\.[^.]+$/, '.txt')), 'current caption');
+    const panel = await host.openMedia(name);
+    await panel.receive({ type: 'ready' });
+    const initial = host.sent.find(message => message.type === 'initialImage').image;
+    assert.equal(initial.name, name); assert.equal(initial.relativePath, name);
+    const done = host.sent.find(message => message.type === 'images');
+    assert.equal(done.initialImageId, initial.id);
+    assert.equal(done.images.length, 1);
+    await panel.receive({ type: 'loadCaption', id: initial.id, requestId: 'direct-caption' });
+    assert.equal(host.sent.at(-1).caption, 'current caption');
+  }
+});
+
+for (const remote of [false, true]) test(`copy file path uses the validated original ${remote ? 'SSH host' : 'local'} path without reading media`, async t => {
+  const host = await createHost(t, {}, remote), name = '中文 100% %20%2F # ?.jpg';
+  await fs.writeFile(path.join(host.dataset, name), 'fixture'); await host.panel.receive({ type: 'ready' });
+  const image = host.sent.find(message => message.type === 'images').images[0];
+  await host.panel.receive({ type: 'copyFilePath', id: image.id, requestId: 'copy-1', filePath: '/untrusted/path' });
+  assert.deepEqual(host.clipboardWrites, [path.join(host.dataset, name)]);
+  assert.deepEqual(host.sent.at(-1), { type: 'filePathCopied', id: image.id, requestId: 'copy-1', copied: true, error: undefined });
+  assert.equal(host.reads.length, 0); assert.equal(host.sent.some(message => message.type === 'caption' || message.type === 'preview'), false);
+  await host.panel.receive({ type: 'copyFilePath', id: 'file:///outside/secret.jpg', requestId: 'copy-bad' });
+  assert.equal(host.sent.at(-1).copied, false); assert.equal(host.clipboardWrites.length, 1);
+});
+
+test('copy file path reports actual clipboard failure and supports video originals', async t => {
+  const host = await createHost(t, { failClipboard: true }); await fs.writeFile(path.join(host.dataset, 'clip.mp4'), 'fixture'); await host.panel.receive({ type: 'ready' });
+  const image = host.sent.find(message => message.type === 'images').images[0];
+  await host.panel.receive({ type: 'copyFilePath', id: image.id, requestId: 'copy-video' });
+  assert.equal(host.sent.at(-1).copied, false); assert.match(host.sent.at(-1).error, /Clipboard unavailable/); assert.equal(host.clipboardWrites.length, 0);
+});

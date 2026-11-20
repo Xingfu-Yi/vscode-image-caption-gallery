@@ -56,6 +56,10 @@
   let currentCaptionToken = '';
   // Neighbours are speculative; recently decoded images remain in a bounded LRU.
   const detailEntries = new Map();
+  let comparison = null, comparisonIds = [], comparisonBytes = 0, comparisonOpening = '';
+  let comparisonValidationTimer;
+  let selectedImages = [];
+  let comparisonStartTimer = 0;
   const captionRequests = new Map();
   let neighborFrame = 0;
   let detailClock = 0, switchStarted = 0, loadingTimer = 0;
@@ -125,10 +129,37 @@
   let captionLoaded = false;
   let isEditing = false;
   let isSaving = false;
+  let pendingCaptionEditId = '';
   let lastReportedDirty = false;
   let pendingAction = null;
   let activeDecisionRequest = '';
   let decisionSequence = 0;
+  let copySequence = 0;
+  const fileCopies = new Map();
+  const fileMenu = new window.GalleryFileMenu({ root: document.body, language: document.body.dataset.uiLanguage,
+    resolveTarget: event => {
+      const card = event.target.closest?.('.image-card');
+      if (card && !galleryView.classList.contains('hidden')) {
+        cancelComparisonStart();
+        return images.find(image => image.id === card.dataset.mediaId);
+      }
+      const keyboard = event.type === 'keydown' && event.target === detailView;
+      if (detailView.classList.contains('hidden') || (!keyboard && !event.target.closest?.('#image-stage, #detail-path'))) return null;
+      if ((keyboard || imageStage.contains(event.target)) && !isCurrentVideo() && transitionImage) {
+        const retained = [...detailEntries.values()].find(entry => entry.target === transitionImage);
+        if (retained) return images.find(image => image.id === retained.id);
+      }
+      return images.find(image => image.id === currentCaptionRequest);
+    }, copy: copyFilePath });
+
+  function copyFilePath(record) {
+    return new Promise((resolve, reject) => {
+      const requestId = `copy-path-${++copySequence}`;
+      const timer = setTimeout(() => { fileCopies.delete(requestId); reject(new Error('Copying the file path timed out.')); }, 10000);
+      fileCopies.set(requestId, { id: record.id, resolve, reject, timer });
+      vscode.postMessage({ type: 'copyFilePath', id: record.id, requestId });
+    });
+  }
   let splitRatio = clamp(Number(persisted.splitRatio) || 0.64, 0.3, 0.8);
   let textPaneHidden = typeof persisted.textPaneHidden === 'boolean'
     ? persisted.textPaneHidden
@@ -217,11 +248,17 @@
 
   sizeInput.addEventListener('input', applyThumbnailSize);
   search.addEventListener('input', () => {
+    clearComparisonSelection();
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => renderGallery(true), 120);
   });
   document.querySelector('#refresh').addEventListener('click', () => {
     vscode.postMessage({ type: 'refresh' });
+  });
+  document.querySelector('#compare-selected').addEventListener('click', enterComparison);
+  document.querySelector('#clear-comparison').addEventListener('click', clearComparisonSelection);
+  document.querySelector('#comparison-help').addEventListener('click', () => {
+    document.querySelector('#browser-status').textContent = uiText('Ctrl / ⌘ click two images to compare. Hold Space to show B on the left; release to restore. Esc returns to Gallery with A/B selected; press Esc again to clear.', 'Ctrl / ⌘ 点击两张图片进入对比。按住空格左侧显示 B，松开恢复；Esc 返回 Gallery 并保留 A/B，再按一次 Esc 清空选择。');
   });
   document.querySelector('#back').addEventListener('click', () => requestGuardedAction({ type: 'gallery' }));
   document.querySelector('#previous').addEventListener('click', () => requestGuardedAction({ type: 'move', offset: -1 }));
@@ -266,10 +303,13 @@
     }
   });
   document.addEventListener('visibilitychange', () => {
+    if (document.hidden) cancelComparisonStart();
     if (document.hidden) { cancelVideoResume(); if (detailVideo.hasAttribute('src')) { detailVideo.pause(); videoStream?.suspend(); } }
     else if (!document.hidden) { videoStream?.resume(); }
   });
-  window.addEventListener('pagehide', () => { stopVideo(); clearDetailEntries(); });
+  window.addEventListener('blur', cancelComparisonStart);
+  window.addEventListener('pagehide', () => { fileMenu.dispose(); for (const pending of fileCopies.values()) { clearTimeout(pending.timer); pending.reject(new Error('Gallery closed.')); } fileCopies.clear(); cancelComparisonStart(); clearInterval(comparisonValidationTimer); comparison?.dispose(); comparison = null; comparisonIds = []; stopVideo(); clearDetailEntries(); });
+  window.addEventListener('focus', validateComparison);
   loadOriginal.addEventListener('click', (event) => {
     event.stopPropagation();
     const image = filteredImages[currentIndex];
@@ -322,11 +362,14 @@
   });
 
   window.addEventListener('keydown', (event) => {
+    if (fileMenu.menu) return;
+    if (comparison) { return; }
     if (settingsDialog.open) {
       if (event.key === 'Escape') { event.preventDefault(); closeSettings(); }
       return;
     }
     if (detailView.classList.contains('hidden')) {
+      if (event.key === 'Escape' && !event.repeat && selectedImages.length) { event.preventDefault(); clearComparisonSelection(); }
       return;
     }
 
@@ -344,8 +387,10 @@
       return;
     }
 
-    const viewingShortcut = !isEditing && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
+    const viewingShortcut = !isEditing && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
       && (!isTypingTarget(event.target) || event.target === detailVideo || event.target instanceof HTMLButtonElement);
+    const editShortcut = viewingShortcut && !isTypingTarget(event.target);
+    if (editShortcut && event.key.toLowerCase() === 'e') { event.preventDefault(); startCaptionEditingFromShortcut(); return; }
     if (viewingShortcut && event.key.toLowerCase() === 'c') { event.preventDefault(); toggleTextPane(); return; }
     if (viewingShortcut && event.key.toLowerCase() === 'f') { event.preventDefault(); openBrowserMedia(); return; }
 
@@ -369,7 +414,23 @@
   });
 
   window.addEventListener('message', (event) => {
+    if (event.data.type === 'filePathCopied') {
+      const message = event.data, pending = fileCopies.get(message.requestId);
+      if (!pending || pending.id !== message.id) return;
+      clearTimeout(pending.timer); fileCopies.delete(message.requestId);
+      if (message.copied) pending.resolve(); else pending.reject(new Error(message.error || 'Could not copy the file path.'));
+      return;
+    }
     const message = event.data;
+    if (message.type === 'browserComparisonOpened') {
+      if (message.requestId === comparisonOpening) {
+        comparisonOpening = '';
+        const button = comparison?.root.querySelector('[data-action=fullscreen]');
+        if (button) { button.disabled = false; button.title = message.error || ''; }
+        document.querySelector('#browser-status').textContent = message.error || '';
+      }
+      return;
+    }
     if (message.type === 'browserVideoOpened' || message.type === 'browserImagesOpened') {
       if (!browserOpening || message.requestId !== browserOpening.requestId || message.id !== browserOpening.id) { return; }
       windowFullscreenPending = false; browserOpening = null;
@@ -386,6 +447,7 @@
       syncVideoControls(); return;
     }
     if (message.type === 'loading') {
+      cancelComparisonStart();
       scanning = true;
       refreshDetail = !detailView.classList.contains('hidden');
       if (refreshDetail) { clearDetailEntries(currentCaptionRequest); }
@@ -401,7 +463,7 @@
       if (!scanning || message.scanId !== incomingScan) { return; }
       if (!receivedBatch) {
         receivedBatch = true;
-        if (detailView.classList.contains('hidden')) {
+        if (detailView.classList.contains('hidden') && !comparison) {
           images = incomingImages;
           containsVideo = false;
           filteredImages = [];
@@ -429,6 +491,14 @@
       const activeImageId = detailView.classList.contains('hidden') ? '' : currentCaptionRequest;
       images = message.images || (message.order ? message.order.map((index) => incomingImages[index]) : incomingImages);
       for (const image of images) { image.searchPath ??= image.relativePath.toLocaleLowerCase(); }
+      const selectedCount = selectedImages.length;
+      selectedImages = selectedImages.filter(id => images.some(image => image.id === id && image.kind !== 'video'));
+      if (selectedImages.length !== selectedCount) cancelComparisonStart();
+      updateComparisonSelection();
+      if (comparison) {
+        if (comparisonIds.some(id => !selectedImages.includes(id))) { exitComparison(); }
+        else { comparison.records = comparisonIds.map(id => images.find(image => image.id === id)); comparison.reload(); }
+      }
       if (message.initialImageId) {
         search.value = '';
       }
@@ -511,6 +581,12 @@
 
     if (message.type === 'panelVisibility') {
       panelVisible = message.visible;
+      if (!panelVisible) cancelComparisonStart();
+      if (comparison) {
+        comparison.setVisible(panelVisible);
+        if (panelVisible) validateComparison();
+        return;
+      }
       if (!panelVisible) { cancelVideoResume(); }
       if (!message.visible) {
         if (detailVideo.hasAttribute('src')) { detailVideo.pause(); }
@@ -539,10 +615,13 @@
       const entry = pending.detail && pending.kind !== 'video' ? detailEntries.get(pending.id) : null;
       if (message.type === 'previewInvalidated') {
         if (!entry) { return; }
+        if (comparisonIds.includes(entry.id)) { comparison?.reload(comparisonIds.indexOf(entry.id)); return; }
+        if (detailView.classList.contains('hidden')) { disposeDetailEntry(entry); return; }
         requestPreview(entry.target, entry.id, true, false, entry.target !== detailImage);
         return;
       }
       if (message.type === 'previewSkipped') {
+        if (entry && comparisonIds.includes(entry.id)) { comparison?.reload(comparisonIds.indexOf(entry.id)); return; }
         if (entry && pending.target !== detailImage) { entry.skipped = true; releasePreview(pending.target); }
         else if (entry) { requestPreview(pending.target, pending.id, true); }
         return;
@@ -550,7 +629,7 @@
       if (message.type === 'previewError' || message.type === 'videoError') {
         if (pending.kind === 'video') { showVideoError(`Could not load video: ${message.message}`); }
         else if (pending.detail) {
-          if (entry) { entry.failed = true; }
+          if (entry) { entry.failed = true; settleImageWaiters(entry, new Error(message.message || 'Could not generate preview.')); }
           if (pending.target === detailImage) { showImageError(`Could not generate preview: ${message.message}`); }
         }
         else { failImageThumbnail(pending.target, message.message || 'Could not generate thumbnail.'); }
@@ -595,7 +674,13 @@
       if (message.type === 'caption') { entry.caption = message; }
       if (detailView.classList.contains('hidden') || message.id !== currentCaptionRequest
         || message.requestId !== currentCaptionToken || isEditing || isSaving) { return; }
-      if (message.type === 'caption') { applyCaptionMessage(message); exitEditMode(); }
+      const enterEditing = message.type === 'caption' && pendingCaptionEditId === message.id && !settingsDialog.open;
+      if (pendingCaptionEditId === message.id) { pendingCaptionEditId = ''; }
+      if (message.type === 'caption') {
+        applyCaptionMessage(message);
+        exitEditMode();
+        if (enterEditing) { enterEditMode(); }
+      }
       else if (!captionLoaded) {
         captionPreview.textContent = `Could not load caption: ${message.message}`;
         editCaption.disabled = true;
@@ -712,7 +797,25 @@
     card.className = 'image-card';
     card.type = 'button';
     card.title = image.relativePath;
-    card.addEventListener('click', () => openDetail(image.id));
+    let modifiedPointer = false;
+    card.addEventListener('pointerdown', event => {
+      modifiedPointer = event.button === 0 && (event.ctrlKey || event.metaKey);
+      if (modifiedPointer) { event.preventDefault(); toggleComparisonImage(image); }
+    });
+    card.addEventListener('pointercancel', () => { modifiedPointer = false; });
+    card.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { modifiedPointer = false; }
+    });
+    card.addEventListener('click', event => {
+      // A recognized selection owns its trailing click, even if the modifier
+      // was released or the Webview delivered click after pointerup's task.
+      if (modifiedPointer) { event.preventDefault(); modifiedPointer = false; return; }
+      if (event.ctrlKey || event.metaKey) { event.preventDefault(); toggleComparisonImage(image); }
+      else openDetail(image.id);
+    });
+    card.addEventListener('contextmenu', event => {
+      if (event.ctrlKey || modifiedPointer) { event.preventDefault(); if (!modifiedPointer) toggleComparisonImage(image); modifiedPointer = true; }
+    });
     let thumbnail;
     if (image.kind === 'video') {
       thumbnail = document.createElement('span');
@@ -751,7 +854,112 @@
     filename.className = 'filename';
     filename.textContent = image.name;
     card.append(thumbnail, filename);
+    markComparisonCard(card, image.id);
     return card;
+  }
+
+  function markComparisonCard(card, id) {
+    const index = selectedImages.indexOf(id);
+    card.classList.toggle('comparison-selected', index >= 0); card.setAttribute('aria-pressed', String(index >= 0));
+    card.querySelector('.comparison-marker')?.remove();
+    if (index >= 0) { const marker = document.createElement('span'); marker.className = 'comparison-marker'; marker.textContent = index ? 'B' : 'A'; card.append(marker); }
+  }
+  function updateComparisonSelection() {
+    document.querySelector('#comparison-selection').classList.toggle('hidden', !selectedImages.length);
+    const button = document.querySelector('#compare-selected'); button.disabled = selectedImages.length !== 2;
+    button.textContent = `${uiText('Compare', '对比')} ${selectedImages.length}/2`;
+    for (const card of gallery.querySelectorAll('.image-card')) markComparisonCard(card, card.dataset.mediaId);
+  }
+  function toggleComparisonImage(image) {
+    cancelComparisonStart();
+    if (image.kind === 'video') { document.querySelector('#browser-status').textContent = uiText('Comparison supports images only.', '对比模式仅支持图片。'); return; }
+    const index = selectedImages.indexOf(image.id);
+    if (index >= 0) selectedImages.splice(index, 1);
+    else if (selectedImages.length < 2) selectedImages.push(image.id);
+    else { document.querySelector('#browser-status').textContent = uiText('Deselect an image before choosing another.', '请先取消一张选择，再选择其他图片。'); return; }
+    updateComparisonSelection();
+    if (selectedImages.length === 2 && index < 0) {
+      const pair = [...selectedImages];
+      // Keep both A/B markers visible before changing views. A subsequent user
+      // action can cancel this intent; it must never open a stale selection.
+      comparisonStartTimer = setTimeout(() => {
+        comparisonStartTimer = 0;
+        if (panelVisible && !document.hidden && selectedImages.length === 2 && pair.every((id, i) => selectedImages[i] === id)) enterComparison();
+      }, 350);
+    }
+  }
+  function cancelComparisonStart() {
+    clearTimeout(comparisonStartTimer); comparisonStartTimer = 0;
+  }
+  function clearComparisonSelection() {
+    cancelComparisonStart(); selectedImages = []; updateComparisonSelection();
+  }
+  function settleImageWaiters(entry, error) {
+    for (const settle of [...(entry.waiters || [])]) settle(error);
+  }
+  function loadComparisonImage(side, original, signal, force) {
+    const image = images.find(image => image.id === comparisonIds[side]), entry = detailEntry(image);
+    const variant = `${gallerySettings.resolution}/${original}`;
+    if (!force && entry.ready && entry.variant === variant) {
+      entry.used = ++detailClock;
+      vscode.postMessage({ type: 'validatePreview', id: entry.id, requestId: entry.target.dataset.previewRequest });
+      return Promise.resolve({ image: entry.target, dimensions: entry.dimensions });
+    }
+    if (force || entry.variant !== variant || entry.failed || !entry.target.dataset.previewRequest) requestPreview(entry.target, entry.id, true, original);
+    else vscode.postMessage({ type: 'promotePreview', requestId: entry.target.dataset.previewRequest });
+    const requestId = entry.target.dataset.previewRequest;
+    return new Promise((resolve, reject) => {
+      entry.waiters ||= new Set();
+      const finish = error => {
+        clearTimeout(timer); entry.waiters.delete(finish); signal.removeEventListener('abort', abort);
+        if (error) reject(error); else resolve({ image: entry.target, dimensions: entry.dimensions });
+      };
+      const abort = () => {
+        if (!entry.ready && entry.target.dataset.previewRequest === requestId) releasePreview(entry.target);
+        finish(new Error('Image request cancelled.'));
+      };
+      const timer = setTimeout(() => { if (entry.target.dataset.previewRequest === requestId) releasePreview(entry.target); entry.failed = true; finish(new Error(uiText('Image loading timed out.', '图片加载超时。'))); }, 45000);
+      entry.waiters.add(finish); signal.addEventListener('abort', abort, { once: true });
+      if (signal.aborted) abort();
+    });
+  }
+  function enterComparison() {
+    cancelComparisonStart();
+    if (comparison || selectedImages.length !== 2 || !detailView.classList.contains('hidden')) return;
+    const pair = selectedImages.map(id => images.find(image => image.id === id));
+    if (pair.some(image => !image || image.kind === 'video')) return;
+    comparisonIds = [...selectedImages]; comparisonBytes = 0;
+    cancelAnimationFrame(neighborFrame); neighborFrame = 0; clearImageTransition(); clearTimeout(loadingTimer);
+    for (const entry of detailEntries.values()) { releaseCaption(entry); }
+    currentCaptionToken = ''; stopVideo(); grid.suspend(); galleryView.classList.add('hidden');
+    document.querySelector('#browser-status').textContent = '';
+    trimDetailEntries();
+    comparison = new window.GalleryCompare({ images: pair, language: document.body.dataset.uiLanguage, load: loadComparisonImage,
+      sensitivity: () => imageZoomSensitivity, onClose: exitComparison, onFullscreen: openComparisonBrowser,
+      onCopyFilePath: copyFilePath,
+      onMemory: bytes => { comparisonBytes = bytes; trimDetailEntries(); } });
+    if (!panelVisible) comparison.setVisible(false);
+    comparisonValidationTimer = setInterval(validateComparison, 15000);
+  }
+  function validateComparison() {
+    if (!comparison || !panelVisible || document.hidden) return;
+    for (const id of comparisonIds) {
+      const entry = detailEntries.get(id);
+      if (entry?.ready && entry.target.dataset.previewRequest) vscode.postMessage({ type: 'validatePreview', id, requestId: entry.target.dataset.previewRequest });
+    }
+  }
+  function exitComparison() {
+    clearInterval(comparisonValidationTimer);
+    comparison?.dispose(); comparison = null; comparisonIds = []; comparisonBytes = 0; comparisonOpening = '';
+    cancelComparisonStart();
+    trimDetailEntries(); galleryView.classList.remove('hidden'); if (panelVisible) grid.resume(); updateComparisonSelection();
+    document.querySelector('#comparison-help').focus({ preventScroll: true });
+  }
+  function openComparisonBrowser(state) {
+    if (comparisonOpening || !comparison) return;
+    comparisonOpening = `comparison-${++previewSequence}`;
+    comparison.root.querySelector('[data-action=fullscreen]').disabled = true;
+    vscode.postMessage({ type: 'openComparisonInBrowser', requestId: comparisonOpening, ids: [...comparisonIds], search: search.value.trim(), resolution: gallerySettings.resolution, videoMaxHeight: gallerySettings.videoMaxHeight, ffmpegPath: gallerySettings.ffmpegPath, comparison: state });
   }
 
   function releaseCard(card) {
@@ -795,6 +1003,8 @@
   }
 
   function openDetail(id) {
+    fileMenu.close();
+    cancelComparisonStart();
     clearTimeout(searchTimer);
     currentIndex = filteredIndex.get(id) ?? -1;
     if (currentIndex < 0) {
@@ -860,6 +1070,7 @@
     mediaKindLabel.textContent = isCurrentVideo() ? 'Video' : 'Image';
     imageStage.title = isCurrentVideo() ? '' : 'Pinch to zoom · Drag or two-finger scroll to pan · Double-click to reset';
     currentCaptionRequest = image.id;
+    pendingCaptionEditId = '';
     captionText = '';
     renderedCaption = '';
     captionExists = false;
@@ -939,12 +1150,14 @@
       if (target.dataset.previewRequest !== requestId || detailEntries.get(entry.id) !== entry) { return; }
       entry.decodeMs = performance.now() - decodeStarted;
       entry.ready = true; entry.used = ++detailClock;
+      settleImageWaiters(entry);
       trimDetailEntries();
       entry.displayMs = performance.now() - (entry.resourceStarted || performance.now());
       if (target === detailImage && !detailView.classList.contains('hidden') && !isCurrentVideo()) { displayReadyImage(entry); }
     });
     function imageFailed() {
       entry.failed = true;
+      settleImageWaiters(entry, new Error('Could not display this image.'));
       if (target === detailImage && target.hasAttribute('src')) { showImageError('Could not display this image.'); }
     }
     target.addEventListener('error', imageFailed);
@@ -989,16 +1202,17 @@ ${zh ? '切换到绘制' : 'Switch to paint'} ${seconds(entry.switchMs)}`;
   function trimDetailEntries() {
     const neighbours = new Set(filteredImages.slice(Math.max(0, currentIndex - 1), currentIndex + 2).map(image => image.id));
     const activeId = filteredImages[currentIndex]?.id;
+    const protectedEntry = entry => comparisonIds.length ? comparisonIds.includes(entry.id) : entry.id === activeId || entry.target === transitionImage;
     const bytes = entry => (entry.target.naturalWidth || entry.dimensions?.width || 0) * (entry.target.naturalHeight || entry.dimensions?.height || 0) * (entry.dimensions?.frameCount || 1) * 4;
     for (const [id, entry] of detailEntries) {
       const unknownAnimation = /\.(gif|webp)$/i.test(entry.target.alt) && !entry.dimensions?.frameCount;
-      if (id !== activeId && entry.target !== transitionImage && ((!entry.ready && !neighbours.has(id)) || bytes(entry) > 64 * 1024 * 1024 || (entry.ready && unknownAnimation))) { disposeDetailEntry(entry); }
+      if (!protectedEntry(entry) && ((!entry.ready && (comparisonIds.length || !neighbours.has(id))) || bytes(entry) > 64 * 1024 * 1024 || (entry.ready && unknownAnimation))) { disposeDetailEntry(entry); }
     }
-    let total = [...detailEntries.values()].reduce((sum, entry) => sum + bytes(entry), 0);
-    const candidates = [...detailEntries.values()].filter(entry => entry.id !== activeId && entry.target !== transitionImage)
+    let total = comparisonBytes + [...detailEntries.values()].reduce((sum, entry) => sum + bytes(entry), 0);
+    const candidates = [...detailEntries.values()].filter(entry => !protectedEntry(entry))
       .sort((a, b) => Number(neighbours.has(a.id)) - Number(neighbours.has(b.id)) || (a.used || 0) - (b.used || 0));
     for (const entry of candidates) {
-      if (detailEntries.size <= 7 && total <= 128 * 1024 * 1024) { break; }
+      if (detailEntries.size + Number(comparisonBytes > 0) <= 7 && total <= 128 * 1024 * 1024) { break; }
       total -= bytes(entry); disposeDetailEntry(entry);
     }
   }
@@ -1009,6 +1223,7 @@ ${zh ? '切换到绘制' : 'Switch to paint'} ${seconds(entry.switchMs)}`;
   }
 
   function disposeDetailEntry(entry) {
+    settleImageWaiters(entry, new Error('Image cache released.'));
     releaseCaption(entry);
     releasePreview(entry.target);
     entry.target.removeAttribute('src');
@@ -1023,6 +1238,7 @@ ${zh ? '切换到绘制' : 'Switch to paint'} ${seconds(entry.switchMs)}`;
   }
 
   function scheduleNeighborPreload(early = false) {
+    if (comparisonIds.length) return;
     cancelAnimationFrame(neighborFrame);
     neighborFrame = requestAnimationFrame(() => {
       neighborFrame = 0;
@@ -1083,11 +1299,13 @@ ${zh ? '切换到绘制' : 'Switch to paint'} ${seconds(entry.switchMs)}`;
   }
 
   function showGallery() {
+    fileMenu.close();
     if (videoFocused) { setVideoFocus(false, false); }
     stopVideo();
     clearDetailEntries();
     detailImage.removeAttribute('src');
     currentCaptionToken = '';
+    pendingCaptionEditId = '';
     imageResizeObserver?.disconnect();
     detailView.classList.add('hidden');
     galleryView.classList.remove('hidden');
@@ -1105,6 +1323,19 @@ ${zh ? '切换到绘制' : 'Switch to paint'} ${seconds(entry.switchMs)}`;
     updateEditControls();
     updateDirtyState();
     captionEditor.focus({ preventScroll: true });
+  }
+
+  function startCaptionEditingFromShortcut() {
+    if (!currentCaptionRequest || isEditing || isSaving || detailView.classList.contains('hidden')) { return; }
+    if (videoFocused) { setVideoFocus(false, false); }
+    pendingCaptionEditId = currentCaptionRequest;
+    if (textPaneHidden) { setTextPaneHidden(false); }
+    if (captionLoaded) {
+      pendingCaptionEditId = '';
+      enterEditMode();
+    } else {
+      requestCurrentCaption();
+    }
   }
 
   function requestCancelEditing() {
@@ -1232,9 +1463,9 @@ ${zh ? '切换到绘制' : 'Switch to paint'} ${seconds(entry.switchMs)}`;
     if (image.kind === 'video') {
       const state = captureVideoPlayback();
       videoFeedbackMessage.textContent = uiText('Opening browser player…', '正在打开浏览器播放器…');
-      vscode.postMessage({ type: 'openVideoInBrowser', ...browserOpening, ffmpegPath: gallerySettings.ffmpegPath, playback: { time: state.time, rate: videoPlaybackRate, volume: state.volume, muted: state.muted, quality: gallerySettings.videoMaxHeight } });
+      vscode.postMessage({ type: 'openVideoInBrowser', ...browserOpening, search: search.value.trim(), resolution: gallerySettings.resolution, ffmpegPath: gallerySettings.ffmpegPath, playback: { time: state.time, rate: videoPlaybackRate, volume: state.volume, muted: state.muted, quality: gallerySettings.videoMaxHeight } });
     } else {
-      vscode.postMessage({ type: 'openImagesInBrowser', ...browserOpening, search: search.value.trim(), resolution: gallerySettings.resolution, original: inDetail && detailImage.dataset.original === 'true' });
+      vscode.postMessage({ type: 'openImagesInBrowser', ...browserOpening, search: search.value.trim(), resolution: gallerySettings.resolution, videoMaxHeight: gallerySettings.videoMaxHeight, ffmpegPath: gallerySettings.ffmpegPath, original: inDetail && detailImage.dataset.original === 'true' });
     }
   }
 
@@ -1276,6 +1507,7 @@ ${zh ? '切换到绘制' : 'Switch to paint'} ${seconds(entry.switchMs)}`;
     detailToggleCaption.setAttribute('aria-label', hidden ? uiText('Show Caption', '显示 Caption') : uiText('Hide Caption', '隐藏 Caption'));
     detailToggleCaption.title = `${detailToggleCaption.getAttribute('aria-label')} (C)`;
     if (hidden) {
+      pendingCaptionEditId = '';
       for (const entry of detailEntries.values()) { releaseCaption(entry); entry.caption = null; }
       currentCaptionToken = '';
       captionLoaded = false;
@@ -1905,6 +2137,7 @@ ${uiText('Message round trip and display', '消息往返与显示')} ${Math.roun
   }
 
   function openSettings(button) {
+    cancelComparisonStart();
     settingsOpener = button;
     vscode.postMessage({ type: 'getPreviewPool' });
     syncSettingsControls();
@@ -1927,6 +2160,7 @@ ${uiText('Message round trip and display', '消息往返与显示')} ${Math.roun
   }
 
   function reloadImagePreviews() {
+    if (comparison) { comparison.reload(); grid.clear(); renderGallery(); return; }
     clearDetailEntries(currentCaptionRequest);
     grid.clear(); renderGallery();
     if (!detailView.classList.contains('hidden') && filteredImages[currentIndex] && !isCurrentVideo()) {
